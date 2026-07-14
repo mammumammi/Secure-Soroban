@@ -1,0 +1,4 @@
+target/
+*.wasm
+report.json
+.stellar/
