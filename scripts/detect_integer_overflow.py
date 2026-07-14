@@ -81,7 +81,8 @@ if __name__ == "__main__":
     detected, result = simulate_overflow()
     report = generate_report(detected, result)
     
-    with open("overflow_report.json", "w") as f:
+    report_dir = os.environ.get("REPORT_DIR", "scripts")
+    with open(f"{report_dir}/overflow_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
     sys.exit(1 if detected else 0)

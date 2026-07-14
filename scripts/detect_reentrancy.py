@@ -83,7 +83,8 @@ if __name__ == "__main__":
     detected = check_reentrancy_pattern()
     report = generate_report(detected)
     
-    with open("reentrancy_report.json", "w") as f:
+    report_dir = os.environ.get("REPORT_DIR", "scripts")
+    with open(f"{report_dir}/reentrancy_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
     sys.exit(1 if detected else 0)

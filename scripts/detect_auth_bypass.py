@@ -103,7 +103,8 @@ def generate_report(attack_succeeded, balance_before, balance_after):
         "fix": "Add require_auth() to withdraw() function"
     }
     
-    with open("report.json", "w") as f:
+    report_dir = os.environ.get("REPORT_DIR", "scripts")
+    with open(f"{report_dir}/report.json", "w") as f:
         json.dump(report, f, indent=2)
     
     print(f"\n   Report saved to report.json")

@@ -97,7 +97,8 @@ if __name__ == "__main__":
     findings = run_static_scan()
     report = generate_report(findings)
     
-    with open("static_report.json", "w") as f:
+    report_dir = os.environ.get("REPORT_DIR", "scripts")
+    with open(f"{report_dir}/static_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
     sys.exit(1 if report["detected"] else 0)

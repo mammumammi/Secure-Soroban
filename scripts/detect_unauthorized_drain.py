@@ -4,7 +4,7 @@ import sys
 import os
 from datetime import datetime
 
-CONTRACT_ID     = os.environ.get("DRAIN_CONTRACT_ID", "")
+CONTRACT_ID = os.environ.get("DRAIN_CONTRACT_ID", "CCWEK7ILZYTSCOFMQEQJY5SISXFAXJKM7WGT7247YAMZZYVT2WL2YZ5Z")
 TOKEN_ID        = os.environ.get("TOKEN_ID", "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC")
 VICTIM          = os.environ.get("VICTIM_ADDRESS", "GAPJOEEWW4Y5ASHLRB2XAF6LDVHN5GJQFW4VZDPRDR5JODR3ZNYBFJQD")
 ATTACKER        = os.environ.get("ATTACKER_ADDRESS", "GBLUFMJRRZBU7TYPP2KKUCTCFCKIPNYA7ELBRLXTOLOQGY3ZFT3GJA4K")
@@ -100,7 +100,8 @@ if __name__ == "__main__":
     print(f"[*] Balance after:  {balance_after} XLM")
     report = generate_report(detected, balance_before, balance_after)
     
-    with open("drain_report.json", "w") as f:
+    report_dir = os.environ.get("REPORT_DIR", "scripts")
+    with open(f"{report_dir}/drain_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
     sys.exit(1 if detected else 0)

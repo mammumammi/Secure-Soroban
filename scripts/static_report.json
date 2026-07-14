@@ -1,0 +1,96 @@
+{
+  "check": "static_analysis",
+  "detected": true,
+  "severity": "HIGH",
+  "total_issues": 13,
+  "findings": {
+    "unauthorized_drain": [
+      {
+        "line": 10,
+        "code": "pub fn deposit(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 24,
+        "code": "pub fn emergency_withdraw(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 44,
+        "code": "pub fn balance(env: Env, token: Address) -> i128 {",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      }
+    ],
+    "reentrancy": [
+      {
+        "line": 10,
+        "code": "pub fn deposit(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 33,
+        "code": "pub fn withdraw(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 61,
+        "code": "pub fn get_user_balance(env: Env, user: Address) -> i128 {",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      }
+    ],
+    "integer_overflow": [
+      {
+        "line": 12,
+        "code": "pub fn calculate_fee(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 21,
+        "code": "amount * fee_percent / 100",
+        "issue": "Unchecked multiplication \u2014 use checked_mul()",
+        "severity": "HIGH"
+      },
+      {
+        "line": 24,
+        "code": "pub fn deposit_with_fee(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 44,
+        "code": "pub fn get_balance(env: Env) -> i128 {",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      }
+    ],
+    "hello-world": [
+      {
+        "line": 11,
+        "code": "pub fn deposit(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 23,
+        "code": "pub fn withdraw(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      },
+      {
+        "line": 36,
+        "code": "pub fn balance(",
+        "issue": "Public function \u2014 verify require_auth() is called inside",
+        "severity": "MEDIUM"
+      }
+    ]
+  },
+  "estimated_loss_usd": 120.0,
+  "fix": "Review all flagged lines and apply suggested fixes"
+}
