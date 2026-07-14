@@ -1,4 +1,4 @@
-name: 🛡️ Stellar Shield Security Scan
+name: Stellar Shield Security Scan
 
 on:
   push:
@@ -12,19 +12,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: ⭐ Install Stellar CLI
+      - name: Install Stellar CLI
         run: |
           curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | sh -s -- --install-deps
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: 🦀 Add WASM target
+      - name: Add WASM target
         run: |
           rustup target add wasm32v1-none
 
-      - name: 💾 Cache Rust dependencies
+      - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -35,18 +35,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: 🏗️ Build Soroban contract
+      - name: Build Soroban contract
         run: |
           cd vulnerable_contracts/escrow
           stellar contract build
 
-      - name: 🐍 Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      
-      - name: 🚀 Deploy vulnerable contract
+      - name: Deploy vulnerable contract
         run: |
           CONTRACT_ID=$(stellar contract deploy \
             --wasm vulnerable_contracts/escrow/target/wasm32v1-none/release/hello_world.wasm \
@@ -55,8 +54,7 @@ jobs:
           echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
           echo "Deployed: $CONTRACT_ID"
 
-          
-     - name: 🔍 Run Stellar Shield security scan
+      - name: Run Stellar Shield security scan
         env:
           CONTRACT_ID: ${{ env.CONTRACT_ID }}
           TOKEN_ID: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
@@ -66,23 +64,23 @@ jobs:
           cd scripts
           python3 detect_auth_bypass.py
 
-      - name: 📊 Upload security report
+      - name: Upload security report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stellar-shield-report
           path: scripts/report.json
 
-      - name: 💬 Post report to PR
+      - name: Post report to PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const report = JSON.parse(fs.readFileSync('scripts/report.json', 'utf8'));
-            const status = report.detected ? '❌ BLOCKED' : '✅ SAFE TO DEPLOY';
+            const status = report.detected ? 'BLOCKED' : 'SAFE TO DEPLOY';
             const body = `
-            ## 🛡️ Stellar Shield Security Report
+            ## Stellar Shield Security Report
             | Field | Value |
             |-------|-------|
             | Vulnerability | ${report.vulnerability} |
@@ -90,7 +88,6 @@ jobs:
             | Funds At Risk | ${report.funds_at_risk_xlm} XLM |
             | Estimated Loss | $${report.estimated_loss_usd} USD |
             | Status | ${status} |
-            
             **Fix:** ${report.fix}
             `;
             github.rest.issues.createComment({
