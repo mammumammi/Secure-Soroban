@@ -1,22 +1,36 @@
-# Soroban Project
+# Stellar Shield
 
-## Project Structure
+Automated smart contract security scanner for Soroban contracts on Stellar.
 
-This repository uses the recommended structure for a Soroban project:
+Stellar Shield runs as a GitHub Actions workflow that automatically 
+simulates attack vectors against your Soroban smart contracts on every 
+push — catching vulnerabilities before they reach mainnet.
 
-```text
-.
-├── contracts
-│   └── hello_world
-│       ├── src
-│       │   ├── lib.rs
-│       │   └── test.rs
-│       └── Cargo.toml
-├── Cargo.toml
-└── README.md
-```
+## What It Detects
+- Authorization Bypass (Missing require_auth())
+- More attack vectors coming in v2
 
-- New Soroban contracts can be put in `contracts`, each in their own directory. There is already a `hello_world` contract in there to get you started.
-- If you initialized this project with any other example contracts via `--with-example`, those contracts will be in the `contracts` directory as well.
-- Contracts should have their own `Cargo.toml` files that rely on the top-level `Cargo.toml` workspace for their dependencies.
-- Frontend libraries can be added to the top-level directory as well. If you initialized this project with a frontend template via `--frontend-template` you will have those files already included.
+## How It Works
+1. Developer pushes Soroban contract code
+2. Stellar Shield deploys contract to Stellar testnet sandbox
+3. Simulates real attack against the contract
+4. Calculates estimated financial loss in XLM and USD
+5. Blocks the push if critical vulnerabilities found
+6. Posts full security report to the PR
+
+## Setup
+Add to your .github/workflows/stellar-shield.yml:
+(paste your workflow yaml here)
+
+Add secrets to your GitHub repo:
+- VICTIM_SECRET — funded testnet account secret key
+- ATTACKER_SECRET — attacker testnet account secret key
+
+## Demo
+(add a screenshot of the blocked push output here)
+
+## Roadmap
+- v1: Authorization bypass detection (done)
+- v2: Integer overflow detection
+- v2: Reentrancy simulation  
+- Pro: AI agent generates contract-specific attack scripts

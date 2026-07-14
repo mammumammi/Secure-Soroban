@@ -1,0 +1,7 @@
+{
+  "check": "reentrancy",
+  "detected": true,
+  "severity": "HIGH",
+  "estimated_loss_usd": 24.0,
+  "fix": "Update storage state before making external token transfers"
+}

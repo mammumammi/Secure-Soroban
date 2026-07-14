@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-07-15T02:13:08.652445",
+  "total_loss_usd": 12.0,
+  "push_blocked": true,
+  "checks": {
+    "auth_bypass": {
+      "vulnerability": "authorization_bypass",
+      "detected": true,
+      "severity": "CRITICAL",
+      "funds_at_risk_xlm": 100,
+      "estimated_loss_usd": 12.0,
+      "fix": "Add require_auth() to withdraw() function"
+    },
+    "unauthorized_drain": {
+      "detected": false,
+      "severity": "NONE",
+      "estimated_loss_usd": 0
+    },
+    "reentrancy": {
+      "detected": false,
+      "severity": "NONE",
+      "estimated_loss_usd": 0
+    },
+    "static_analysis": {
+      "detected": false,
+      "severity": "NONE",
+      "estimated_loss_usd": 0
+    }
+  }
+}
