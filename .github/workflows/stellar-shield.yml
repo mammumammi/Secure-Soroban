@@ -71,7 +71,7 @@ jobs:
 
       - name: 📊 Upload security report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: stellar-shield-report
           path: scripts/report.json
