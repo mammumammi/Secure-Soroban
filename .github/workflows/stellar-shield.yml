@@ -45,25 +45,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 🔑 Set up Stellar accounts
-        env:
-          VICTIM_SECRET: ${{ secrets.VICTIM_SECRET }}
-          ATTACKER_SECRET: ${{ secrets.ATTACKER_SECRET }}
-        run: |
-          stellar keys generate victim --secret-key $VICTIM_SECRET --network testnet
-          stellar keys generate attacker --secret-key $ATTACKER_SECRET --network testnet
+      
       - name: 🚀 Deploy vulnerable contract
         run: |
           CONTRACT_ID=$(stellar contract deploy \
             --wasm vulnerable_contracts/escrow/target/wasm32v1-none/release/hello_world.wasm \
-            --source victim \
+            --source ${{ secrets.VICTIM_SECRET }} \
             --network testnet)
           echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
           echo "Deployed: $CONTRACT_ID"
 
-      - name: 🔍 Run Stellar Shield security scan
+          
+     - name: 🔍 Run Stellar Shield security scan
         env:
           CONTRACT_ID: ${{ env.CONTRACT_ID }}
+          TOKEN_ID: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+          VICTIM_SECRET: ${{ secrets.VICTIM_SECRET }}
+          ATTACKER_SECRET: ${{ secrets.ATTACKER_SECRET }}
         run: |
           cd scripts
           python3 detect_auth_bypass.py

