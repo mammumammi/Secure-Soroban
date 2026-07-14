@@ -8,7 +8,7 @@ on:
 
 jobs:
   security-scan:
-    name: Authorization Bypass Detection
+    name: Full Attack Simulation
     runs-on: ubuntu-latest
 
     steps:
@@ -21,8 +21,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Add WASM target
-        run: |
-          rustup target add wasm32v1-none
+        run: rustup target add wasm32v1-none
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -32,10 +31,9 @@ jobs:
             ~/.cargo/git
             vulnerable_contracts/escrow/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Build Soroban contract
+      - name: Build all contracts
         run: |
           cd vulnerable_contracts/escrow
           stellar contract build
@@ -45,31 +43,33 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Deploy vulnerable contract
-        run: |
-          CONTRACT_ID=$(stellar contract deploy \
-            --wasm vulnerable_contracts/escrow/target/wasm32v1-none/release/hello_world.wasm \
-            --source ${{ secrets.VICTIM_SECRET }} \
-            --network testnet)
-          echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
-          echo "Deployed: $CONTRACT_ID"
-
-      - name: Run Stellar Shield security scan
+      - name: Run full security scan
         env:
-          CONTRACT_ID: ${{ env.CONTRACT_ID }}
-          TOKEN_ID: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
-          VICTIM_SECRET: ${{ secrets.VICTIM_SECRET }}
-          ATTACKER_SECRET: ${{ secrets.ATTACKER_SECRET }}
-        run: |
-          cd scripts
-          python3 detect_auth_bypass.py
+          VICTIM_SECRET:          ${{ secrets.VICTIM_SECRET }}
+          ATTACKER_SECRET:        ${{ secrets.ATTACKER_SECRET }}
+          VICTIM_ADDRESS:         "GAPJOEEWW4Y5ASHLRB2XAF6LDVHN5GJQFW4VZDPRDR5JODR3ZNYBFJQD"
+          ATTACKER_ADDRESS:       "GBLUFMJRRZBU7TYPP2KKUCTCFCKIPNYA7ELBRLXTOLOQGY3ZFT3GJA4K"
+          TOKEN_ID:               "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+          AUTH_CONTRACT_ID:       "CBTJ2VU3VJM3WZU3TZTA6ZVGAEFRUUW6WPCIOCD7DNKL4LPLWW536ZUE"
+          DRAIN_CONTRACT_ID:      "CCWEK7ILZYTSCOFMQEQJY5SISXFAXJKM7WGT7247YAMZZYVT2WL2YZ5Z"
+          OVERFLOW_CONTRACT_ID:   "CCPN3X25DKVUCIYHUTMUM4YI5LZBGOUHQ6VDDVXBNZ32WM7YIHJXTWLJ"
+          REENTRANCY_CONTRACT_ID: "CCC5TMGGNHVQG2PH7PZ3BBLQKKBPAEJICGETSRJ7QNJUYEB7R5N4NDGV"
+          STELLAR_NETWORK:        "testnet"
+          CONTRACTS_PATH:         "vulnerable_contracts/escrow/contracts"
+        run: python3 scripts/run_all.py
 
-      - name: Upload security report
+      - name: Upload security reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stellar-shield-report
-          path: scripts/report.json
+          name: stellar-shield-reports
+          path: |
+            scripts/report.json
+            scripts/drain_report.json
+            scripts/overflow_report.json
+            scripts/reentrancy_report.json
+            scripts/static_report.json
+            scripts/combined_report.json
 
       - name: Post report to PR
         if: github.event_name == 'pull_request'
@@ -77,18 +77,18 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('scripts/report.json', 'utf8'));
-            const status = report.detected ? 'BLOCKED' : 'SAFE TO DEPLOY';
+            const report = JSON.parse(fs.readFileSync('scripts/combined_report.json', 'utf8'));
+            const status = report.push_blocked ? 'BLOCKED' : 'SAFE TO DEPLOY';
+            const checks = Object.entries(report.checks)
+              .map(([key, val]) => `| ${key} | ${val.severity} | $${val.estimated_loss_usd} |`)
+              .join('\n');
             const body = `
             ## Stellar Shield Security Report
-            | Field | Value |
-            |-------|-------|
-            | Vulnerability | ${report.vulnerability} |
-            | Severity | ${report.severity} |
-            | Funds At Risk | ${report.funds_at_risk_xlm} XLM |
-            | Estimated Loss | $${report.estimated_loss_usd} USD |
-            | Status | ${status} |
-            **Fix:** ${report.fix}
+            | Check | Severity | Est. Loss |
+            |-------|----------|-----------|
+            ${checks}
+            **Total Funds At Risk:** $${report.total_loss_usd} USD
+            **Push Status:** ${status}
             `;
             github.rest.issues.createComment({
               issue_number: context.issue.number,

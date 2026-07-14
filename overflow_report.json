@@ -1,0 +1,8 @@
+{
+  "check": "integer_overflow",
+  "detected": false,
+  "severity": "NONE",
+  "overflow_result": 0,
+  "estimated_loss_usd": 0,
+  "fix": "Use checked_mul() instead of * for arithmetic operations"
+}

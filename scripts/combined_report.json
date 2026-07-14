@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-15T02:17:07.564865",
+  "timestamp": "2026-07-15T02:20:30.498379",
   "total_loss_usd": 12.0,
   "push_blocked": true,
   "checks": {
@@ -12,6 +12,11 @@
       "fix": "Add require_auth() to withdraw() function"
     },
     "unauthorized_drain": {
+      "detected": false,
+      "severity": "NONE",
+      "estimated_loss_usd": 0
+    },
+    "integer_overflow": {
       "detected": false,
       "severity": "NONE",
       "estimated_loss_usd": 0
