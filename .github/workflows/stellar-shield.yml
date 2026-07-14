@@ -50,9 +50,8 @@ jobs:
           VICTIM_SECRET: ${{ secrets.VICTIM_SECRET }}
           ATTACKER_SECRET: ${{ secrets.ATTACKER_SECRET }}
         run: |
-          stellar keys add victim --secret-key $VICTIM_SECRET
-          stellar keys add attacker --secret-key $ATTACKER_SECRET
-
+          echo "$VICTIM_SECRET" | stellar keys add victim --secret-key -
+          echo "$ATTACKER_SECRET" | stellar keys add attacker --secret-key -
       - name: 🚀 Deploy vulnerable contract
         run: |
           CONTRACT_ID=$(stellar contract deploy \
