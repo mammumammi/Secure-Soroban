@@ -44,6 +44,7 @@ jobs:
           python-version: "3.11"
 
       - name: Run full security scan
+        continue-on-error: true
         env:
           VICTIM_SECRET:          ${{ secrets.VICTIM_SECRET }}
           ATTACKER_SECRET:        ${{ secrets.ATTACKER_SECRET }}
@@ -133,3 +134,16 @@ jobs:
           STELLAR_NETWORK:  "testnet"
           CONTRACTS_PATH:   "vulnerable_contracts/escrow/contracts"
         run: python3 scripts/ai_agent_attacker.py
+
+      - name: Enforce push block
+        run: |
+          python3 -c "
+          import json, sys
+          report = json.load(open('scripts/combined_report.json'))
+          if report['push_blocked']:
+              print('PUSH BLOCKED — vulnerabilities found')
+              sys.exit(1)
+          else:
+              print('SAFE TO DEPLOY')
+              sys.exit(0)
+          "
