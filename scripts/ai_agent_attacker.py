@@ -201,16 +201,14 @@ def schedule_fund_recovery(drained_amount):
 
 def recover_funds(amount):
     print(f"\n[*] Executing fund recovery — returning {amount} XLM to victim...")
-    
-    # Transfer native XLM back from attacker to victim
-    # Use Stellar payment operation directly
+
     recovery_cmd = f"""stellar tx new payment \
         --source {ATTACKER_SECRET} \
         --network {NETWORK} \
         --destination {VICTIM} \
         --asset native \
-        --amount {amount / 10000000}"""
-    
+        --amount {int(amount)}"""
+
     out, err, code = run(recovery_cmd)
     
     if code == 0:

@@ -1,0 +1,84 @@
+{
+  "timestamp": "2026-07-16T10:01:41.576751",
+  "model": "qwen2.5-coder:7b",
+  "mode": "ai_agent_attack",
+  "total_loss_usd": 12.0,
+  "push_blocked": true,
+  "analyses": {
+    "hello-world": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Missing Authorization Check",
+      "vulnerable_function": "withdraw",
+      "attack_description": "The 'withdraw' function does not require authentication, allowing anyone to withdraw funds from the escrow contract.",
+      "attack_params": {
+        "function_to_call": "withdraw",
+        "caller": "attacker",
+        "key_param": "any valid token address and amount"
+      },
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Add 'to.require_auth()' at the beginning of the 'withdraw' function."
+    },
+    "unauthorized_drain": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Unrestricted Withdrawal",
+      "vulnerable_function": "emergency_withdraw",
+      "attack_description": "Any address can call emergency_withdraw to drain the entire contract balance.",
+      "attack_params": {
+        "function_to_call": "emergency_withdraw",
+        "caller": "attacker",
+        "key_param": "any valid token address"
+      },
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Add ownership verification in emergency_withdraw by checking if the caller is the owner/admin."
+    },
+    "reentrancy": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Reentrancy",
+      "vulnerable_function": "withdraw",
+      "attack_description": "The contract allows an attacker to drain more than the deposited amount by exploiting a reentrancy vulnerability.",
+      "attack_params": {
+        "function_to_call": "withdraw",
+        "caller": "attacker",
+        "key_param": "amount greater than or equal to user's balance"
+      },
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Update the state before making external calls."
+    },
+    "integer_overflow": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Integer Overflow",
+      "vulnerable_function": "calculate_fee",
+      "attack_description": "Attacker passes a large amount and fee_percent to cause an overflow, resulting in a small or negative fee.",
+      "attack_params": {
+        "function_to_call": "deposit_with_fee",
+        "caller": "attacker",
+        "key_param": "amount: 10^256 - 1, fee_percent: 1"
+      },
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Replace `amount * fee_percent / 100` with `amount.checked_mul(fee_percent).unwrap_or(0) / 100`."
+    }
+  },
+  "attack_results": {
+    "hello-world": {
+      "succeeded": true,
+      "drained": 100
+    },
+    "unauthorized_drain": {
+      "succeeded": false,
+      "drained": 0
+    },
+    "reentrancy": {
+      "succeeded": false,
+      "drained": 0
+    },
+    "integer_overflow": {
+      "succeeded": false,
+      "drained": 0
+    }
+  },
+  "fund_recovery": "scheduled_5_minutes"
+}
