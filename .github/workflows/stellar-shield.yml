@@ -122,6 +122,9 @@ jobs:
           ollama pull qwen2.5-coder:7b
           echo "Model ready"
 
+      - name: Install Python dependencies
+        run: pip install requests
+
       - name: Run AI agent scan
         continue-on-error: true
         timeout-minutes: 10
