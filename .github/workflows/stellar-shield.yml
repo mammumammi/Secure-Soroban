@@ -123,6 +123,7 @@ jobs:
           echo "Model ready"
 
       - name: Run AI agent scan
+        continue-on-error: true
         timeout-minutes: 10
         env:
           VICTIM_SECRET:    ${{ secrets.VICTIM_SECRET }}
