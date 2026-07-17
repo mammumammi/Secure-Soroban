@@ -17,7 +17,7 @@ VICTIM_SECRET        = os.environ.get("VICTIM_SECRET", "")
 ATTACKER_SECRET      = os.environ.get("ATTACKER_SECRET", "")
 NETWORK              = os.environ.get("STELLAR_NETWORK", "testnet")
 CONTRACTS_PATH       = os.environ.get("CONTRACTS_PATH", "vulnerable_contracts/escrow/contracts")
-RECOVERY_TIMEOUT     = 300  # 5 minutes in seconds
+RECOVERY_TIMEOUT     = 120  # 2 minutes in seconds
 TEST_AMOUNT          = 100
 XLM_PRICE            = 0.12
 
@@ -162,12 +162,9 @@ def execute_ai_attack(analysis):
     
     return attack_succeeded, drained
 
-# ── Step 4: Return funds after 5 minutes ──────────────────
-def schedule_fund_recovery(drained_amount):
-    if drained_amount <= 0:
-        return
-    
-    print(f"\n[*] Scheduling fund recovery in {RECOVERY_TIMEOUT} seconds (5 minutes)...")
+# ── Step 4: Return funds after 2 minutes ──────────────────
+def return_funds(amount_to_return, asset_code):
+    print(f"\n[*] Scheduling fund recovery in {RECOVERY_TIMEOUT} seconds (2 minutes)...")
     print(f"[*] {drained_amount} XLM will be returned to victim account")
     print(f"[*] This is a security simulation — funds are always returned")
     
@@ -288,7 +285,7 @@ def generate_ai_report(analyses, attack_results):
     print("\n" + "=" * 60)
     print(f"   TOTAL AI-IDENTIFIED LOSS: ${total_loss:.2f} USD")
     print(f"   PUSH STATUS: {'❌ BLOCKED' if any_critical else '✅ SAFE'}")
-    print(f"   FUND RECOVERY: Scheduled for 5 minutes after attack")
+    print(f"   FUND RECOVERY: Scheduled for 2 minutes after attack")
     print("=" * 60)
     
     report = {

@@ -141,7 +141,7 @@ jobs:
 
       - name: Run AI agent scan
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 5
         env:
           VICTIM_SECRET:    ${{ secrets.VICTIM_SECRET }}
           ATTACKER_SECRET:  ${{ secrets.ATTACKER_SECRET }}
