@@ -1,15 +1,18 @@
-name: Stellar Shield Security Scan
+name: SecureSoroban — Security Gate
 
 on:
   push:
     branches: ["main", "master"]
   pull_request:
     branches: ["main", "master"]
+  workflow_dispatch:
 
 jobs:
-  security-scan:
-    name: Full Attack Simulation
+  testnet-security-scan:
+    name: SecureSoroban Testnet Attack Simulation
     runs-on: ubuntu-latest
+    outputs:
+      safe-to-deploy: ${{ steps.gate.outputs.safe }}
 
     steps:
       - name: Checkout repository
@@ -43,6 +46,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Python dependencies
+        run: pip install requests
+
       - name: Run full security scan
         continue-on-error: true
         env:
@@ -63,7 +69,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stellar-shield-reports
+          name: secure-soroban-reports
           path: |
             scripts/report.json
             scripts/drain_report.json
@@ -79,17 +85,17 @@ jobs:
           script: |
             const fs = require('fs');
             const report = JSON.parse(fs.readFileSync('scripts/combined_report.json', 'utf8'));
-            const status = report.push_blocked ? 'BLOCKED' : 'SAFE TO DEPLOY';
+            const status = report.push_blocked ? 'BLOCKED — not safe for mainnet' : 'SAFE TO DEPLOY';
             const checks = Object.entries(report.checks)
               .map(([key, val]) => `| ${key} | ${val.severity} | $${val.estimated_loss_usd} |`)
               .join('\n');
             const body = `
-            ## Stellar Shield Security Report
+            ## SecureSoroban Security Report
             | Check | Severity | Est. Loss |
             |-------|----------|-----------|
             ${checks}
             **Total Funds At Risk:** $${report.total_loss_usd} USD
-            **Push Status:** ${status}
+            **Mainnet Deploy Gate:** ${status}
             `;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -98,13 +104,41 @@ jobs:
               body: body
             });
 
-      - name: Cache Ollama models
+           - name: Cache Ollama and Models
+        id: cache-ollama
         uses: actions/cache@v4
         with:
-          path: ~/.ollama
+          path: |
+            ~/.ollama
+            /usr/local/bin/ollama
           key: ${{ runner.os }}-ollama-qwen2.5-coder-7b
           restore-keys: |
             ${{ runner.os }}-ollama-
+
+      - name: Install Ollama (if not cached)
+        if: steps.cache-ollama.outputs.cache-hit != 'true'
+        run: curl -fsSL https://ollama.com/install.sh | sh
+        shell: bash
+
+      - name: Start Ollama Server
+        run: |
+          # Start server in background
+          ollama serve &
+          echo "Waiting for Ollama to start..."
+          for i in $(seq 1 30); do
+            curl -s http://localhost:11434/api/tags && break
+            sleep 2
+          done
+          echo "Ollama ready"
+        shell: bash
+
+      - name: Pull qwen2.5-coder model (if not cached)
+        if: steps.cache-ollama.outputs.cache-hit != 'true'
+        run: |
+          ollama pull qwen2.5-coder:7b
+          echo "Model ready"
+        shell: bash
+
 
       - name: Install and start Ollama
         run: |
@@ -122,9 +156,6 @@ jobs:
           ollama pull qwen2.5-coder:7b
           echo "Model ready"
 
-      - name: Install Python dependencies
-        run: pip install requests
-
       - name: Run AI agent scan
         continue-on-error: true
         timeout-minutes: 10
@@ -139,15 +170,44 @@ jobs:
           CONTRACTS_PATH:   "vulnerable_contracts/escrow/contracts"
         run: python3 scripts/ai_agent_attacker.py
 
-      - name: Enforce push block
+      - name: Determine deploy gate
+        id: gate
         run: |
           python3 -c "
-          import json, sys
+          import json
           report = json.load(open('scripts/combined_report.json'))
-          if report['push_blocked']:
-              print('PUSH BLOCKED — vulnerabilities found')
-              sys.exit(1)
-          else:
-              print('SAFE TO DEPLOY')
-              sys.exit(0)
-          "
+          safe = not report['push_blocked']
+          print(f'safe={str(safe).lower()}')
+          print('SAFE TO DEPLOY' if safe else 'BLOCKED — vulnerabilities found, mainnet deploy will not run')
+          " >> "$GITHUB_OUTPUT"
+
+  mainnet-deploy:
+    name: SecureSoroban Mainnet Deployment
+    needs: testnet-security-scan
+    if: needs.testnet-security-scan.outputs.safe-to-deploy == 'true' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Stellar CLI
+        run: |
+          curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | sh -s -- --install-deps
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Add WASM target
+        run: rustup target add wasm32v1-none
+
+      - name: Build contract
+        run: |
+          cd vulnerable_contracts/escrow
+          stellar contract build
+
+      # - name: Deploy to mainnet
+      #   env:
+      #     MAINNET_DEPLOYER_SECRET: ${{ secrets.MAINNET_DEPLOYER_SECRET }}
+      #   run: |
+      #     stellar contract deploy \
+      #       --wasm vulnerable_contracts/escrow/target/wasm32v1-none/release/hello_world.wasm \
+      #       --source "$MAINNET_DEPLOYER_SECRET" \
+      #       --network mainnet

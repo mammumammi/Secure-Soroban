@@ -71,7 +71,7 @@ def generate_report(attack_succeeded, balance_before, balance_after):
     
     print("\n")
     print("=" * 55)
-    print("   🛡️  STELLAR SHIELD — SECURITY REPORT")
+    print("   Secure Soroban — SECURITY REPORT")
     print("=" * 55)
     print(f"   Contract  : {CONTRACT_ID[:20]}...")
     print(f"   Network   : {NETWORK}")
@@ -112,7 +112,7 @@ def generate_report(attack_succeeded, balance_before, balance_after):
 
 # ── Main ───────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🛡️  Stellar Shield — Starting Security Scan...")
+    print("Secure Soroban — Starting Security Scan...")
     
     deposit_funds()
     

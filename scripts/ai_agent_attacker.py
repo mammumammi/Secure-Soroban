@@ -255,7 +255,7 @@ def generate_ai_report(analyses, attack_results):
     
     print("\n")
     print("=" * 60)
-    print("   STELLAR SHIELD — AI AGENT SECURITY REPORT")
+    print("   Secure Soroban — AI AGENT SECURITY REPORT")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
     print(f"   Model Used : {MODEL}")
@@ -310,7 +310,7 @@ def generate_ai_report(analyses, attack_results):
 
 # ── Main ───────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("STELLAR SHIELD — AI Agent Attacker Starting...")
+    print("Secure Soroban — AI Agent Attacker Starting...")
     print(f"Model: {MODEL}")
     print("=" * 60)
     

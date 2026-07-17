@@ -56,7 +56,7 @@ def print_final_report(reports):
 
     print("\n")
     print("=" * 60)
-    print("   STELLAR SHIELD — FULL SECURITY REPORT")
+    print("   Secure Soroban — FULL SECURITY REPORT")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     project_root = os.path.dirname(script_dir)
     os.chdir(project_root)
 
-    print("STELLAR SHIELD — Full Security Scan Starting...")
+    print("Secure Soroban — Full Security Scan Starting...")
     print("=" * 60)
 
     env_vars = {
