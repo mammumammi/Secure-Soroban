@@ -198,7 +198,7 @@ def schedule_fund_recovery(drained_amount):
         time.sleep(30)
     
     recover_funds(drained_amount)
-#up
+#uphad
 def recover_funds(amount):
     print(f"\n[*] Executing fund recovery — returning {amount} XLM to victim...")
 
