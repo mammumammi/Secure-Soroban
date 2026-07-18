@@ -74,10 +74,17 @@ jobs:
           path: |
             ~/.ollama
             /usr/local/bin/ollama
-          key: ${{ runner.os }}-ollama-binary-qwen2.5-coder-7b-v1
+            /usr/local/lib/ollama
+          key: ${{ runner.os }}-ollama-full-qwen2.5-coder-7b-v2
+          restore-keys: |
+            ${{ runner.os }}-ollama-full-
+      
       - name: Install Ollama
         if: steps.cache-ollama.outputs.cache-hit != 'true'
-        run: curl -fsSL https://ollama.com/install.sh | sh
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ls /usr/local/lib/ollama/
+          
       - name: Start Ollama
         run: |
           ollama serve &
