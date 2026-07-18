@@ -1,3 +1,12 @@
+name: SecureSoroban — Security Gate
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
 jobs:
   hardcoded-scan:
     name: Hardcoded Attack Simulation
