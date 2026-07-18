@@ -1,0 +1,100 @@
+name: 'SecureSoroban'
+description: 'Automated smart contract attack simulator for Soroban contracts on Stellar. Detects authorization bypass, unauthorized drain, reentrancy, integer overflow, and multisig vulnerabilities.'
+author: 'Aashin Mammu'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  victim-secret:
+    description: 'Funded Stellar testnet account secret key for depositing test funds'
+    required: true
+  attacker-secret:
+    description: 'Attacker Stellar testnet account secret key'
+    required: true
+  victim-address:
+    description: 'Public address of victim testnet account'
+    required: true
+  attacker-address:
+    description: 'Public address of attacker testnet account'
+    required: true
+  token-id:
+    description: 'Stellar testnet native token contract ID'
+    required: true
+  network:
+    description: 'Stellar network to use'
+    required: false
+    default: 'testnet'
+
+outputs:
+  vulnerabilities-found:
+    description: 'Whether critical vulnerabilities were detected'
+  total-loss-usd:
+    description: 'Estimated total financial loss in USD'
+  severity:
+    description: 'Highest severity level found'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Stellar CLI
+      shell: bash
+      run: |
+        curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | sh -s -- --install-deps
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Add WASM target
+      shell: bash
+      run: rustup target add wasm32v1-none
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-securesoroban
+
+    - name: Build contracts
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}/vulnerable_contracts/escrow
+        stellar contract build
+
+    - name: Install Python dependencies
+      shell: bash
+      run: pip install requests
+
+    - name: Run security scan
+      shell: bash
+      env:
+        VICTIM_SECRET:          ${{ inputs.victim-secret }}
+        ATTACKER_SECRET:        ${{ inputs.attacker-secret }}
+        VICTIM_ADDRESS:         ${{ inputs.victim-address }}
+        ATTACKER_ADDRESS:       ${{ inputs.attacker-address }}
+        TOKEN_ID:               ${{ inputs.token-id }}
+        STELLAR_NETWORK:        ${{ inputs.network }}
+        AUTH_CONTRACT_ID:       "CBTJ2VU3VJM3WZU3TZTA6ZVGAEFRUUW6WPCIOCD7DNKL4LPLWW536ZUE"
+        DRAIN_CONTRACT_ID:      "CCWEK7ILZYTSCOFMQEQJY5SISXFAXJKM7WGT7247YAMZZYVT2WL2YZ5Z"
+        OVERFLOW_CONTRACT_ID:   "CCPN3X25DKVUCIYHUTMUM4YI5LZBGOUHQ6VDDVXBNZ32WM7YIHJXTWLJ"
+        REENTRANCY_CONTRACT_ID: "CCC5TMGGNHVQG2PH7PZ3BBLQKKBPAEJICGETSRJ7QNJUYEB7R5N4NDGV"
+        CONTRACTS_PATH:         "${{ github.action_path }}/vulnerable_contracts/escrow/contracts"
+      run: python3 ${{ github.action_path }}/scripts/run_all.py
+
+    - name: Set outputs
+      shell: bash
+      run: |
+        python3 -c "
+        import json, os
+        try:
+            report = json.load(open('scripts/combined_report.json'))
+            severities = [c.get('severity','NONE') for c in report['checks'].values()]
+            top = 'CRITICAL' if 'CRITICAL' in severities else 'HIGH' if 'HIGH' in severities else 'MEDIUM' if 'MEDIUM' in severities else 'NONE'
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                f.write(f'vulnerabilities-found={str(report[\"push_blocked\"]).lower()}\n')
+                f.write(f'total-loss-usd={report[\"total_loss_usd\"]}\n')
+                f.write(f'severity={top}\n')
+        except Exception as e:
+            print(f'Could not read report: {e}')
+        "
