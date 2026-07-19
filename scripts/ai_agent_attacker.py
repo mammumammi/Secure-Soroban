@@ -42,30 +42,43 @@ def read_contract_source():
 # ── AI analysis ─────────────────────────────────────────────
 def ai_analyze_contract(contract_name, source_code):
     print(f"\n[*] AI Agent analyzing {contract_name}...")
+    max_chars = 8000
+    truncated = source_code[:max_chars]
+    if len(source_code) > max_chars:
+        truncated += "\n\n[... contract truncated for analysis ...]"
+    prompt = f"""You are an expert Soroban smart contract security researcher.
 
-    prompt = f"""You are an expert Soroban smart contract security researcher and attacker.
-Analyze this Soroban smart contract written in Rust and identify the most critical vulnerability.
+IMPORTANT SOROBAN-SPECIFIC FACTS — these differ from Ethereum:
+- Soroban does NOT have reentrancy vulnerabilities — cross-contract calls are synchronous
+- Soroban DOES have these real vulnerabilities:
+  1. Missing require_auth() on functions that move funds
+  2. Integer overflow with unchecked arithmetic (use checked_mul, checked_add)
+  3. Unchecked unwrap() that can panic
+  4. Storage exhaustion attacks
+  5. Unauthorized admin functions with no ownership check
+  6. Incorrect expiration/timelock logic
+  7. Missing balance checks before transfers
+
+Do NOT flag reentrancy — it does not exist in Soroban.
+Only flag vulnerabilities that are real in the Soroban execution model.
+
+Analyze this contract and find the most critical REAL Soroban vulnerability:
 
 Contract name: {contract_name}
-Contract source code:
 ```rust
-{source_code}
+{truncated}
 ```
 
-Respond ONLY with a JSON object in this exact format, no other text:
+Respond ONLY with JSON:
 {{
-    "vulnerability_found": true,
-    "vulnerability_type": "name of vulnerability",
+    "vulnerability_found": true or false,
+    "vulnerability_type": "specific soroban vulnerability name",
     "vulnerable_function": "function name",
     "attack_description": "how to exploit it in one sentence",
-    "attack_params": {{
-        "function_to_call": "function name",
-        "caller": "attacker",
-        "key_param": "what value to pass"
-    }},
-    "severity": "CRITICAL",
+    "attack_params": {{"function_to_call": "name", "caller": "attacker"}},
+    "severity": "CRITICAL or HIGH or MEDIUM or LOW",
     "estimated_loss_xlm": 100,
-    "fix": "one line fix description"
+    "fix": "one line fix"
 }}"""
 
     try:
