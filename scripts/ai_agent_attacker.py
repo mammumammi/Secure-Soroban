@@ -21,11 +21,23 @@ CONTRACTS_PATH         = os.environ.get("CONTRACTS_PATH", "vulnerable_contracts/
 RECOVERY_TIMEOUT       = 100
 TEST_AMOUNT            = 100
 XLM_PRICE              = 0.12
+MIN_STROOP             = 0.0000001   # minimum Stellar transaction unit
 
 # ── Helper ─────────────────────────────────────────────────
 def run(cmd):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return result.stdout.strip(), result.stderr.strip(), result.returncode
+
+def xlm_to_str(xlm_float):
+    """
+    Convert a float XLM amount to the fixed-point string the Stellar CLI
+    expects (e.g. 100 → '100', 0.5 → '0.5000000').
+    Never produces scientific notation.
+    """
+    if xlm_float == int(xlm_float):          # whole number — keep it clean
+        return str(int(xlm_float))
+    formatted = f"{xlm_float:.7f}"           # 7 decimal places = stroop precision
+    return formatted.rstrip('0').rstrip('.') # strip trailing zeros
 
 # ── Read contract source ────────────────────────────────────
 def read_contract_source():
@@ -88,14 +100,10 @@ Respond ONLY with JSON:
                 "model": MODEL,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                    "num_predict": 500
-                }
+                "options": {"temperature": 0.1, "num_predict": 500}
             },
             timeout=120
         )
-
         if response.status_code == 200:
             raw = response.json()["response"].strip()
             print(f"[+] AI response received")
@@ -103,10 +111,8 @@ Respond ONLY with JSON:
             end = raw.rfind("}") + 1
             if start >= 0 and end > start:
                 return json.loads(raw[start:end])
-
         print(f"[-] AI request failed: {response.status_code}")
         return None
-
     except Exception as e:
         print(f"[-] AI agent error: {e}")
         return None
@@ -155,7 +161,6 @@ def execute_ai_attack(analysis):
     print(f"[*] Balance before attack: {balance_before} XLM")
 
     func = analysis["attack_params"].get("function_to_call", "withdraw")
-
     print(f"\n[*] AI Agent executing attack as attacker...")
     attack_cmd = f"""stellar contract invoke \
         --id {CONTRACT_ID} \
@@ -171,7 +176,6 @@ def execute_ai_attack(analysis):
 
     balance_after = get_balance()
     drained = balance_before - balance_after
-
     print(f"[*] Balance after attack: {balance_after} XLM")
 
     if attack_succeeded:
@@ -182,22 +186,30 @@ def execute_ai_attack(analysis):
     return attack_succeeded, drained
 
 # ── Recover funds ───────────────────────────────────────────
-def recover_funds(amount):
-    print(f"\n[*] Executing fund recovery — returning {amount} XLM to victim...")
+def recover_funds(amount_xlm):
+    """
+    amount_xlm is a plain XLM float (e.g. 100.0).
+    The recovery_task.json stores XLM, not stroops — no conversion needed.
+    """
+    print(f"\n[*] Executing fund recovery — returning {amount_xlm} XLM to victim...")
 
-    xlm_amount = amount / 10000000
+    if amount_xlm < MIN_STROOP:
+        print(f"[-] Recovery amount {amount_xlm} XLM is below minimum stroop — skipping")
+        return
 
-    recovery_cmd = f"""stellar tx new payment \
+    amount_str = xlm_to_str(amount_xlm)   # guaranteed no scientific notation
+
+    recovery_cmd = f"""stellar payment send \
         --source {ATTACKER_SECRET} \
         --network {NETWORK} \
         --destination {VICTIM} \
         --asset native \
-        --amount {xlm_amount}"""
+        --amount {amount_str}"""
 
     out, err, code = run(recovery_cmd)
 
     if code == 0:
-        print(f"[+] RECOVERY SUCCESSFUL — {amount} XLM returned to victim")
+        print(f"[+] RECOVERY SUCCESSFUL — {amount_xlm} XLM returned to victim")
         try:
             with open("scripts/recovery_task.json", "r") as f:
                 task = json.load(f)
@@ -209,52 +221,46 @@ def recover_funds(amount):
             pass
     else:
         print(f"[-] Recovery failed: {err}")
-        print(f"[-] Manual recovery needed: send {amount} XLM to {VICTIM}")
+        print(f"[-] Manual recovery needed: send {amount_xlm} XLM to {VICTIM}")
 
 # ── Schedule fund recovery ──────────────────────────────────
 def schedule_fund_recovery(drained_amount):
+    """drained_amount is in XLM (whole number from TEST_AMOUNT)."""
     if drained_amount <= 0:
         return
 
-    print(f"\n[*] Scheduling fund recovery in {RECOVERY_TIMEOUT} seconds (5 minutes)...")
+    print(f"\n[*] Scheduling fund recovery in {RECOVERY_TIMEOUT} seconds...")
     print(f"[*] {drained_amount} XLM will be returned to victim account")
     print(f"[*] This is a security simulation — funds are always returned")
 
     recovery_task = {
         "scheduled_at": datetime.now().isoformat(),
-        "recover_at": datetime.fromtimestamp(
-            time.time() + RECOVERY_TIMEOUT
-        ).isoformat(),
-        "amount": drained_amount,
+        "recover_at": datetime.fromtimestamp(time.time() + RECOVERY_TIMEOUT).isoformat(),
+        "amount_xlm": drained_amount,   # renamed field — makes the unit unambiguous
         "from_secret": ATTACKER_SECRET,
         "to_address": VICTIM,
-        "token_id": TOKEN_ID,
         "network": NETWORK,
         "status": "pending"
     }
 
     with open("scripts/recovery_task.json", "w") as f:
         json.dump(recovery_task, f, indent=2)
-
     print(f"[+] Recovery task saved to scripts/recovery_task.json")
-    print(f"\n[*] Waiting {RECOVERY_TIMEOUT} seconds before returning funds...")
 
+    print(f"\n[*] Waiting {RECOVERY_TIMEOUT} seconds before returning funds...")
     for remaining in range(RECOVERY_TIMEOUT, 0, -30):
         print(f"    Recovery in {remaining} seconds...")
         time.sleep(30)
 
+    # Pass XLM directly — no division needed
     recover_funds(drained_amount)
 
 # ── Generate AI report ──────────────────────────────────────
 def generate_ai_report(analyses, attack_results):
-    total_loss = sum(
-        r.get("drained", 0) * XLM_PRICE
-        for r in attack_results.values()
-    )
+    total_loss = sum(r.get("drained", 0) * XLM_PRICE for r in attack_results.values())
     any_critical = any(
         a.get("severity") in ["CRITICAL", "HIGH"]
-        for a in analyses.values()
-        if a
+        for a in analyses.values() if a
     )
 
     print("\n")
@@ -270,7 +276,6 @@ def generate_ai_report(analyses, attack_results):
         if not analysis:
             print(f"\n   [SKIP] {contract_name} — AI analysis failed")
             continue
-
         result = attack_results.get(contract_name, {})
         succeeded = result.get("succeeded", False)
         drained = result.get("drained", 0)
@@ -283,7 +288,7 @@ def generate_ai_report(analyses, attack_results):
             print(f"   Drained  : {drained} XLM (${drained * XLM_PRICE:.2f} USD)")
             print(f"   Fix      : {analysis['fix']}")
         elif analysis.get("vulnerability_found"):
-            print(f"\n   [AI-FOUND] {contract_name} — vulnerability identified")
+            print(f"\n   [AI-FOUND] {contract_name} — vulnerability identified but not exploitable via CLI")
             print(f"   Type     : {analysis['vulnerability_type']}")
             print(f"   Severity : {analysis['severity']}")
         else:
@@ -291,8 +296,8 @@ def generate_ai_report(analyses, attack_results):
 
     print("\n" + "=" * 60)
     print(f"   TOTAL AI-IDENTIFIED LOSS: ${total_loss:.2f} USD")
-    print(f"   PUSH STATUS: {'❌ BLOCKED' if any_critical else '✅ SAFE'}")
-    print(f"   FUND RECOVERY: Scheduled 5 minutes after attack")
+    print(f"   PUSH STATUS: {'BLOCKED' if any_critical else 'SAFE'}")
+    print(f"   FUND RECOVERY: Scheduled {RECOVERY_TIMEOUT}s after attack")
     print("=" * 60)
 
     report = {
@@ -303,12 +308,11 @@ def generate_ai_report(analyses, attack_results):
         "push_blocked": any_critical,
         "analyses": analyses,
         "attack_results": attack_results,
-        "fund_recovery": "scheduled_5_minutes"
+        "fund_recovery": f"scheduled_{RECOVERY_TIMEOUT}s"
     }
 
     with open("scripts/ai_agent_report.json", "w") as f:
         json.dump(report, f, indent=2)
-
     print("\n   Report saved to scripts/ai_agent_report.json")
     return any_critical
 
@@ -319,7 +323,6 @@ if __name__ == "__main__":
     print("=" * 60)
 
     sources = read_contract_source()
-
     if not sources:
         print("[-] No contract source files found")
         sys.exit(1)
@@ -327,13 +330,11 @@ if __name__ == "__main__":
     analyses = {}
     attack_results = {}
     total_drained = 0
-
     target_contract = "hello-world"
 
     if target_contract in sources:
         analysis = ai_analyze_contract(target_contract, sources[target_contract])
         analyses[target_contract] = analysis
-
         if analysis:
             print(f"\n[*] AI Analysis Result:")
             print(f"    Vulnerability: {analysis.get('vulnerability_type', 'None')}")
@@ -341,10 +342,7 @@ if __name__ == "__main__":
             print(f"    Attack Plan: {analysis.get('attack_description', 'None')}")
 
             succeeded, drained = execute_ai_attack(analysis)
-            attack_results[target_contract] = {
-                "succeeded": succeeded,
-                "drained": drained
-            }
+            attack_results[target_contract] = {"succeeded": succeeded, "drained": drained}
             total_drained += drained
 
     for name, source in sources.items():
