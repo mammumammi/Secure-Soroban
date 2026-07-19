@@ -1,5 +1,5 @@
 name: 'SecureSoroban'
-description: 'Automated smart contract attack simulator for Soroban contracts on Stellar. Detects authorization bypass, unauthorized drain, reentrancy, integer overflow, and multisig vulnerabilities.'
+description: 'Automated attack simulator for Soroban smart contracts on Stellar — detects vulnerabilities before mainnet.'
 author: 'Aashin Mammu'
 
 branding:
