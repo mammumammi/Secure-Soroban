@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-07-19T13:25:29.594726",
+  "timestamp": "2026-07-19T14:36:56.316706",
   "model": "qwen2.5-coder:7b",
   "mode": "ai_agent_attack",
-  "total_loss_usd": 12.0,
+  "total_loss_usd": 24.0,
   "push_blocked": true,
   "analyses": {
     "unauthorized_drain": {
@@ -12,7 +12,7 @@
       "attack_description": "Any address can call emergency_withdraw to drain the entire contract balance.",
       "severity": "CRITICAL",
       "estimated_loss_xlm": 100,
-      "fix": "Add an ownership check in emergency_withdraw function.",
+      "fix": "Add an ownership check before transferring funds in emergency_withdraw.",
       "attack_params": {
         "function_to_call": "emergency_withdraw",
         "cli_args": "--to <ATTACKER> --token <TOKEN>",
@@ -27,7 +27,7 @@
       "attack_description": "Attacker passes a large amount and fee_percent to cause integer overflow, resulting in a tiny or negative fee.",
       "severity": "CRITICAL",
       "estimated_loss_xlm": 100,
-      "fix": "Replace `amount * fee_percent / 100` with `amount.checked_mul(fee_percent)?.checked_div(100)`.",
+      "fix": "Use `checked_mul()` instead of `*` for multiplication.",
       "attack_params": {
         "function_to_call": "calculate_fee",
         "cli_args": "--amount <AMOUNT> --fee_percent 1",
@@ -38,14 +38,29 @@
     "payment-channel": {
       "vulnerability_found": true,
       "vulnerability_type": "Unchecked unwrap() that can panic",
-      "vulnerable_function": "get_state",
-      "attack_description": "The get_state function does not check if the state exists, which can lead to a panic when calling unwrap() on None.",
+      "vulnerable_function": "withdraw",
+      "attack_description": "The `withdraw` function does not check if the state is available before unwrapping it, which can lead to a panic.",
       "severity": "CRITICAL",
       "estimated_loss_xlm": 100,
-      "fix": "Add a check before unwrap() to ensure the state exists.",
+      "fix": "Add a check to ensure the state is available before unwrapping it.",
       "attack_params": {
-        "function_to_call": "get_state",
+        "function_to_call": "withdraw",
         "cli_args": "",
+        "setup_function": "initialize",
+        "setup_cli_args": "--sender <VICTIM> --recipient <ATTACKER> --token <TOKEN> --allowance <AMOUNT> --expiration null"
+      }
+    },
+    "multisig": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Missing require_auth() on functions that move funds",
+      "vulnerable_function": "approve_owner_addition",
+      "attack_description": "An attacker can approve an owner addition without proper authorization, potentially gaining control of the multisig wallet.",
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Add `caller.require_auth()` at the beginning of the function.",
+      "attack_params": {
+        "function_to_call": "approve_owner_addition",
+        "cli_args": "--new_owner <ATTACKER> --caller <VICTIM>",
         "setup_function": null,
         "setup_cli_args": null
       }
@@ -61,6 +76,10 @@
       "drained": 0
     },
     "payment-channel": {
+      "succeeded": true,
+      "drained": 100
+    },
+    "multisig": {
       "succeeded": false,
       "drained": 0
     }

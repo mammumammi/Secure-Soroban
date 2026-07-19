@@ -154,7 +154,7 @@ def get_balance():
     out, err, code = run(cmd)
     try:
         # It usually outputs something like: 
-        # ℹ️  Simulation identified as read-only...
+        # ℹ️  Simulation identified as read-only.....
         # "100"
         lines = out.strip().split('\n')
         val = lines[-1].replace('"', '').strip()
