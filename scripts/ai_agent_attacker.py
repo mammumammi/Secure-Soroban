@@ -17,7 +17,9 @@ ATTACKER               = os.environ.get("ATTACKER_ADDRESS", "GBLUFMJRRZBU7TYPP2K
 VICTIM_SECRET          = os.environ.get("VICTIM_SECRET", "")
 ATTACKER_SECRET        = os.environ.get("ATTACKER_SECRET", "")
 NETWORK                = os.environ.get("STELLAR_NETWORK", "testnet")
-CONTRACTS_PATH         = os.environ.get("CONTRACTS_PATH", "vulnerable_contracts/escrow/contracts")
+CONTRACT_NAME          = os.environ.get("CONTRACT_NAME", "")
+CONTRACT_DIR           = os.environ.get("CONTRACT_DIR", ".")
+CONTRACTS_PATH         = os.environ.get("CONTRACTS_PATH", os.path.join(CONTRACT_DIR, "src"))
 RECOVERY_TIMEOUT       = 100
 TEST_AMOUNT            = 100
 XLM_PRICE              = 0.12
@@ -336,25 +338,35 @@ if __name__ == "__main__":
     analyses = {}
     attack_results = {}
     total_drained = 0
-    target_contract = "hello-world"
 
-    if target_contract in sources:
-        analysis = ai_analyze_contract(target_contract, sources[target_contract])
-        analyses[target_contract] = analysis
+    # CONTRACT_NAME is injected by action.yml — falls back to scanning all sources
+    target_contract = os.environ.get("CONTRACT_NAME", "").strip() or None
+    if target_contract:
+        print(f"[*] Targeting contract from env: {target_contract}")
+    else:
+        print(f"[*] No CONTRACT_NAME set — scanning all discovered contracts")
+
+    # Analyse and attack-simulate every contract; prioritise the env-specified one first
+    ordered = []
+    if target_contract and target_contract in sources:
+        ordered.append(target_contract)
+    ordered += [n for n in sources if n != target_contract]
+
+    for name in ordered:
+        source = sources[name]
+        analysis = ai_analyze_contract(name, source)
+        analyses[name] = analysis
+
         if analysis:
-            print(f"\n[*] AI Analysis Result:")
+            print(f"\n[*] AI Analysis Result for {name}:")
             print(f"    Vulnerability: {analysis.get('vulnerability_type', 'None')}")
             print(f"    Severity: {analysis.get('severity', 'None')}")
             print(f"    Attack Plan: {analysis.get('attack_description', 'None')}")
 
             succeeded, drained = execute_ai_attack(analysis)
-            attack_results[target_contract] = {"succeeded": succeeded, "drained": drained}
+            attack_results[name] = {"succeeded": succeeded, "drained": drained}
             total_drained += drained
-
-    for name, source in sources.items():
-        if name != target_contract:
-            analysis = ai_analyze_contract(name, source)
-            analyses[name] = analysis
+        else:
             attack_results[name] = {"succeeded": False, "drained": 0}
 
     blocked = generate_ai_report(analyses, attack_results)

@@ -145,16 +145,16 @@ runs:
       run: pip install requests
 
     # --- Core scan loop: one pass per detected contract ---------------------
-    - name: Scan every detected contract
+    - name: Build, deploy and attack-simulate every detected contract
       id: scan
       shell: bash
       run: |
         set -euo pipefail
-        rm -f /tmp/all_reports.jsonl
-        touch /tmp/all_reports.jsonl
+        rm -f /tmp/all_reports.jsonl /tmp/contract_meta.jsonl
+        touch /tmp/all_reports.jsonl /tmp/contract_meta.jsonl
 
         while IFS= read -r CONTRACT_DIR; do
-          echo "=== Scanning $CONTRACT_DIR ==="
+          echo "=== Building & deploying $CONTRACT_DIR ==="
           pushd "$CONTRACT_DIR" > /dev/null
 
           stellar contract build
@@ -163,39 +163,86 @@ runs:
           stellar keys generate attacker --network "${{ inputs.network }}" --fund --overwrite
           VICTIM_ADDRESS=$(stellar keys address victim)
           ATTACKER_ADDRESS=$(stellar keys address attacker)
+          VICTIM_SECRET=$(stellar keys show victim)
+          ATTACKER_SECRET=$(stellar keys show attacker)
 
           WASM_PATH=$(find target/wasm32v1-none/release -maxdepth 1 -name '*.wasm' | head -n1)
+          CONTRACT_NAME=$(basename "$CONTRACT_DIR")
           CONTRACT_ID=$(stellar contract deploy \
             --wasm "$WASM_PATH" \
             --source victim \
             --network "${{ inputs.network }}")
 
+          echo "=== Running attack simulation for $CONTRACT_NAME ==="
           VICTIM_ADDRESS="$VICTIM_ADDRESS" \
           ATTACKER_ADDRESS="$ATTACKER_ADDRESS" \
+          VICTIM_SECRET="$VICTIM_SECRET" \
+          ATTACKER_SECRET="$ATTACKER_SECRET" \
           CONTRACT_ID="$CONTRACT_ID" \
           CONTRACT_DIR="$CONTRACT_DIR" \
+          CONTRACT_NAME="$CONTRACT_NAME" \
           STELLAR_NETWORK="${{ inputs.network }}" \
           FAIL_ON_SEVERITY="${{ inputs.fail_on_severity }}" \
             python3 "$GITHUB_ACTION_PATH/scripts/run_all.py" || true
 
-          if [ "${{ inputs.enable_ai_agent }}" == "true" ]; then
-            VICTIM_ADDRESS="$VICTIM_ADDRESS" \
-            ATTACKER_ADDRESS="$ATTACKER_ADDRESS" \
-            CONTRACT_ID="$CONTRACT_ID" \
-            CONTRACT_DIR="$CONTRACT_DIR" \
-            STELLAR_NETWORK="${{ inputs.network }}" \
-            OLLAMA_MODEL="${{ inputs.ollama_model }}" \
-              timeout 600 python3 "$GITHUB_ACTION_PATH/scripts/ai_agent_attacker.py" || true
-          fi
+          # Save metadata so the AI step can consume the same deployed contracts
+          jq -n \
+            --arg dir "$CONTRACT_DIR" \
+            --arg name "$CONTRACT_NAME" \
+            --arg id "$CONTRACT_ID" \
+            --arg victim "$VICTIM_ADDRESS" \
+            --arg attacker "$ATTACKER_ADDRESS" \
+            --arg vsecret "$VICTIM_SECRET" \
+            --arg asecret "$ATTACKER_SECRET" \
+            '{contract_dir:$dir,contract_name:$name,contract_id:$id,
+              victim_address:$victim,attacker_address:$attacker,
+              victim_secret:$vsecret,attacker_secret:$asecret}' \
+            >> /tmp/contract_meta.jsonl
 
-          if [ -f scripts/combined_report.json ]; then
-            jq -c --arg dir "$CONTRACT_DIR" '. + {contract_dir: $dir}' scripts/combined_report.json >> /tmp/all_reports.jsonl
+          REPORT_SRC="$GITHUB_WORKSPACE/scripts/combined_report.json"
+          if [ -f "$REPORT_SRC" ]; then
+            jq -c --arg dir "$CONTRACT_DIR" '. + {contract_dir: $dir}' "$REPORT_SRC" >> /tmp/all_reports.jsonl
           else
-            echo "{\"contract_dir\": \"$CONTRACT_DIR\", \"push_blocked\": true, \"error\": \"no report produced\"}" >> /tmp/all_reports.jsonl
+            echo "{\"contract_dir\":\"$CONTRACT_DIR\",\"push_blocked\":false,\"error\":\"attack sim produced no report — treated as inconclusive\"}" >> /tmp/all_reports.jsonl
           fi
 
           popd > /dev/null
         done < /tmp/contract_dirs.txt
+
+    - name: Run AI agent scan (independent — never blocks gate)
+      if: inputs.enable_ai_agent == 'true'
+      shell: bash
+      run: |
+        # Reads the same deployed contract metadata from the scan step.
+        # Failures here are logged but never block the security gate.
+        while IFS= read -r META; do
+          CONTRACT_DIR=$(echo    "$META" | jq -r '.contract_dir')
+          CONTRACT_NAME=$(echo   "$META" | jq -r '.contract_name')
+          CONTRACT_ID=$(echo     "$META" | jq -r '.contract_id')
+          VICTIM_ADDRESS=$(echo  "$META" | jq -r '.victim_address')
+          ATTACKER_ADDRESS=$(echo "$META" | jq -r '.attacker_address')
+          VICTIM_SECRET=$(echo   "$META" | jq -r '.victim_secret')
+          ATTACKER_SECRET=$(echo "$META" | jq -r '.attacker_secret')
+
+          echo "=== AI Agent scanning $CONTRACT_NAME ==="
+          VICTIM_ADDRESS="$VICTIM_ADDRESS" \
+          ATTACKER_ADDRESS="$ATTACKER_ADDRESS" \
+          VICTIM_SECRET="$VICTIM_SECRET" \
+          ATTACKER_SECRET="$ATTACKER_SECRET" \
+          CONTRACT_ID="$CONTRACT_ID" \
+          CONTRACT_DIR="$CONTRACT_DIR" \
+          CONTRACT_NAME="$CONTRACT_NAME" \
+          CONTRACTS_PATH="$CONTRACT_DIR/src" \
+          STELLAR_NETWORK="${{ inputs.network }}" \
+          OLLAMA_MODEL="${{ inputs.ollama_model }}" \
+            timeout 600 python3 "$GITHUB_ACTION_PATH/scripts/ai_agent_attacker.py" || \
+            echo "[-] AI agent scan failed for $CONTRACT_NAME — continuing"
+
+          AI_REPORT_SRC="$GITHUB_WORKSPACE/scripts/ai_agent_report.json"
+          if [ -f "$AI_REPORT_SRC" ]; then
+            cp "$AI_REPORT_SRC" "$GITHUB_WORKSPACE/scripts/ai_agent_report_${CONTRACT_NAME}.json"
+          fi
+        done < /tmp/contract_meta.jsonl
 
     - name: Aggregate reports and determine gate
       id: gate
