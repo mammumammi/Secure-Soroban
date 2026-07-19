@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-19T09:32:57.111815",
+  "timestamp": "2026-07-19T11:26:44.580238",
   "model": "qwen2.5-coder:7b",
   "mode": "ai_agent_attack",
   "total_loss_usd": 0.0,
