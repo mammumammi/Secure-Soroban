@@ -1,29 +1,68 @@
 {
-  "timestamp": "2026-07-19T11:26:44.580238",
+  "timestamp": "2026-07-19T13:25:29.594726",
   "model": "qwen2.5-coder:7b",
   "mode": "ai_agent_attack",
-  "total_loss_usd": 0.0,
+  "total_loss_usd": 12.0,
   "push_blocked": true,
   "analyses": {
+    "unauthorized_drain": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Unauthorized admin functions with no ownership check",
+      "vulnerable_function": "emergency_withdraw",
+      "attack_description": "Any address can call emergency_withdraw to drain the entire contract balance.",
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Add an ownership check in emergency_withdraw function.",
+      "attack_params": {
+        "function_to_call": "emergency_withdraw",
+        "cli_args": "--to <ATTACKER> --token <TOKEN>",
+        "setup_function": "deposit",
+        "setup_cli_args": "--from <VICTIM> --token <TOKEN> --amount <AMOUNT>"
+      }
+    },
+    "integer_overflow": {
+      "vulnerability_found": true,
+      "vulnerability_type": "Integer overflow",
+      "vulnerable_function": "calculate_fee",
+      "attack_description": "Attacker passes a large amount and fee_percent to cause integer overflow, resulting in a tiny or negative fee.",
+      "severity": "CRITICAL",
+      "estimated_loss_xlm": 100,
+      "fix": "Replace `amount * fee_percent / 100` with `amount.checked_mul(fee_percent)?.checked_div(100)`.",
+      "attack_params": {
+        "function_to_call": "calculate_fee",
+        "cli_args": "--amount <AMOUNT> --fee_percent 1",
+        "setup_function": null,
+        "setup_cli_args": null
+      }
+    },
     "payment-channel": {
       "vulnerability_found": true,
       "vulnerability_type": "Unchecked unwrap() that can panic",
-      "vulnerable_function": "initialize",
-      "attack_description": "An attacker can cause a panic by passing an invalid token address.",
-      "attack_params": {
-        "function_to_call": "initialize",
-        "caller": "attacker"
-      },
+      "vulnerable_function": "get_state",
+      "attack_description": "The get_state function does not check if the state exists, which can lead to a panic when calling unwrap() on None.",
       "severity": "CRITICAL",
       "estimated_loss_xlm": 100,
-      "fix": "Add a check to ensure the token address is valid before proceeding."
+      "fix": "Add a check before unwrap() to ensure the state exists.",
+      "attack_params": {
+        "function_to_call": "get_state",
+        "cli_args": "",
+        "setup_function": null,
+        "setup_cli_args": null
+      }
     }
   },
   "attack_results": {
+    "unauthorized_drain": {
+      "succeeded": true,
+      "drained": 100
+    },
+    "integer_overflow": {
+      "succeeded": false,
+      "drained": 0
+    },
     "payment-channel": {
       "succeeded": false,
       "drained": 0
     }
-  },
-  "fund_recovery": "scheduled_100s"
+  }
 }
