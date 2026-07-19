@@ -98,7 +98,7 @@ jobs:
         run: ollama pull qwen2.5-coder:7b
       - name: Run AI agent
         continue-on-error: true
-        timeout-minutes: 8
+        timeout-minutes: 15
         env:
           VICTIM_SECRET:    ${{ secrets.VICTIM_SECRET }}
           ATTACKER_SECRET:  ${{ secrets.ATTACKER_SECRET }}
