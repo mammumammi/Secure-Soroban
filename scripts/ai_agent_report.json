@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-19T08:52:54.833398",
+  "timestamp": "2026-07-19T09:32:57.111815",
   "model": "qwen2.5-coder:7b",
   "mode": "ai_agent_attack",
   "total_loss_usd": 0.0,
@@ -9,7 +9,7 @@
       "vulnerability_found": true,
       "vulnerability_type": "Unchecked unwrap() that can panic",
       "vulnerable_function": "initialize",
-      "attack_description": "An attacker could cause a panic by passing an invalid token address.",
+      "attack_description": "An attacker can cause a panic by passing an invalid token address.",
       "attack_params": {
         "function_to_call": "initialize",
         "caller": "attacker"
@@ -25,5 +25,5 @@
       "drained": 0
     }
   },
-  "fund_recovery": "scheduled_5_minutes"
+  "fund_recovery": "scheduled_100s"
 }

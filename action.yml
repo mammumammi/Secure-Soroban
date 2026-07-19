@@ -1,39 +1,44 @@
-name: 'SecureSoroban'
-description: 'Automated attack simulator for Soroban smart contracts on Stellar — detects vulnerabilities before mainnet.'
-author: 'Aashin Mammu'
-
+name: 'Secure Soroban Attack Simulator'
+description: >
+  Auto-detects Soroban smart contracts in your repo, deploys each to testnet,
+  simulates real attack vectors (authorization bypass, unauthorized drain,
+  integer overflow, reentrancy) plus static analysis, and — optionally — runs
+  a local AI agent (qwen2.5-coder via Ollama) that autonomously probes for
+  vulnerabilities. Produces a pass/fail security report.
+author: 'your-org'
 branding:
   icon: 'shield'
   color: 'blue'
 
 inputs:
-  victim-secret:
-    description: 'Funded Stellar testnet account secret key for depositing test funds'
-    required: true
-  attacker-secret:
-    description: 'Attacker Stellar testnet account secret key'
-    required: true
-  victim-address:
-    description: 'Public address of victim testnet account'
-    required: true
-  attacker-address:
-    description: 'Public address of attacker testnet account'
-    required: true
-  token-id:
-    description: 'Stellar testnet native token contract ID'
-    required: true
   network:
-    description: 'Stellar network to use'
+    description: 'Stellar network to run the simulation against'
     required: false
     default: 'testnet'
+  contracts_glob:
+    description: 'Root path to scan for Soroban contracts'
+    required: false
+    default: '.'
+  enable_ai_agent:
+    description: 'Run the local qwen2.5-coder AI agent scan'
+    required: false
+    default: 'true'
+  fail_on_severity:
+    description: 'Minimum severity that fails the action (low|medium|high|critical)'
+    required: false
+    default: 'critical'
+  ollama_model:
+    description: 'Ollama model used by the AI agent'
+    required: false
+    default: 'qwen2.5-coder:7b'
 
 outputs:
-  vulnerabilities-found:
-    description: 'Whether critical vulnerabilities were detected'
-  total-loss-usd:
-    description: 'Estimated total financial loss in USD'
-  severity:
-    description: 'Highest severity level found'
+  safe:
+    description: 'true if no contract triggered a block at or above fail_on_severity'
+    value: ${{ steps.gate.outputs.safe }}
+  report_path:
+    description: 'Path to the combined JSON report artifact'
+    value: ${{ steps.gate.outputs.report_path }}
 
 runs:
   using: 'composite'
@@ -42,59 +47,171 @@ runs:
       shell: bash
       run: |
         curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | sh -s -- --install-deps
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Add WASM target
       shell: bash
       run: rustup target add wasm32v1-none
 
-    - name: Cache Rust dependencies
+    - name: Discover Soroban contracts
+      id: discover
+      shell: bash
+      run: |
+        set -euo pipefail
+        mapfile -t DIRS < <(grep -rl 'soroban-sdk' --include=Cargo.toml "${{ inputs.contracts_glob }}" | xargs -n1 dirname | sort -u)
+        if [ "${#DIRS[@]}" -eq 0 ]; then
+          echo "::error::No Soroban contracts found under ${{ inputs.contracts_glob }}"
+          exit 1
+        fi
+        printf '%s\n' "${DIRS[@]}" > /tmp/contract_dirs.txt
+        echo "Detected ${#DIRS[@]} contract(s):"
+        cat /tmp/contract_dirs.txt
+
+    # --- Caching: Cargo deps ------------------------------------------------
+    - name: Cache Cargo dependencies
       uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ runner.os }}-cargo-securesoroban
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-
 
-    - name: Build contracts
+    # --- Caching: Ollama binary + pulled model ------------------------------
+    # First run on a repo: installs the binary and pulls the model (slow).
+    # Every run after that: cache hits restore both, so install/pull are skipped.
+    - name: Cache Ollama binary and model
+      if: inputs.enable_ai_agent == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/local/bin/ollama
+          ~/.ollama
+        key: ${{ runner.os }}-ollama-${{ inputs.ollama_model }}-v1
+        restore-keys: |
+          ${{ runner.os }}-ollama-${{ inputs.ollama_model }}-
+          ${{ runner.os }}-ollama-
+
+    - name: Install Ollama (skipped if cache hit)
+      if: inputs.enable_ai_agent == 'true'
       shell: bash
       run: |
-        cd ${{ github.action_path }}/vulnerable_contracts/escrow
-        stellar contract build
+        if command -v ollama &> /dev/null; then
+          echo "Ollama binary restored from cache — skipping install"
+        else
+          echo "No cached binary — installing Ollama"
+          curl -fsSL https://ollama.com/install.sh | sh
+        fi
+
+        # Start server and wait until it accepts connections
+        ollama serve &
+        echo "Waiting for Ollama server..."
+        for i in $(seq 1 30); do
+          curl -s http://localhost:11434/api/tags > /dev/null && echo "Server up after ${i}s" && break
+          sleep 2
+        done
+
+    - name: Pull model (skipped if cache hit)
+      if: inputs.enable_ai_agent == 'true'
+      shell: bash
+      run: |
+        if ollama list | grep -q "${{ inputs.ollama_model }}"; then
+          echo "Model '${{ inputs.ollama_model }}' restored from cache — skipping pull"
+        else
+          echo "Pulling model '${{ inputs.ollama_model }}' (first run only)"
+          ollama pull "${{ inputs.ollama_model }}"
+        fi
+
+    - name: Warm model into memory
+      if: inputs.enable_ai_agent == 'true'
+      shell: bash
+      run: |
+        # Send a minimal prompt so the model is fully loaded into RAM before
+        # the scan starts. Without this, the first real request triggers a
+        # 60-90s model-load on the runner, blowing past the 120s HTTP timeout.
+        echo "Warming model into memory..."
+        curl -s --max-time 300 http://localhost:11434/api/generate \
+          -d "{\"model\": \"${{ inputs.ollama_model }}\", \"prompt\": \"hi\", \"stream\": false}" \
+          > /dev/null
+        echo "Model warm — ready for scan"
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
 
     - name: Install Python dependencies
       shell: bash
       run: pip install requests
 
-    - name: Run security scan
-      shell: bash
-      env:
-        VICTIM_SECRET:          ${{ inputs.victim-secret }}
-        ATTACKER_SECRET:        ${{ inputs.attacker-secret }}
-        VICTIM_ADDRESS:         ${{ inputs.victim-address }}
-        ATTACKER_ADDRESS:       ${{ inputs.attacker-address }}
-        TOKEN_ID:               ${{ inputs.token-id }}
-        STELLAR_NETWORK:        ${{ inputs.network }}
-        AUTH_CONTRACT_ID:       "CBTJ2VU3VJM3WZU3TZTA6ZVGAEFRUUW6WPCIOCD7DNKL4LPLWW536ZUE"
-        DRAIN_CONTRACT_ID:      "CCWEK7ILZYTSCOFMQEQJY5SISXFAXJKM7WGT7247YAMZZYVT2WL2YZ5Z"
-        OVERFLOW_CONTRACT_ID:   "CCPN3X25DKVUCIYHUTMUM4YI5LZBGOUHQ6VDDVXBNZ32WM7YIHJXTWLJ"
-        REENTRANCY_CONTRACT_ID: "CCC5TMGGNHVQG2PH7PZ3BBLQKKBPAEJICGETSRJ7QNJUYEB7R5N4NDGV"
-        CONTRACTS_PATH:         "${{ github.action_path }}/vulnerable_contracts/escrow/contracts"
-      run: python3 ${{ github.action_path }}/scripts/run_all.py
-
-    - name: Set outputs
+    # --- Core scan loop: one pass per detected contract ---------------------
+    - name: Scan every detected contract
+      id: scan
       shell: bash
       run: |
-        python3 -c "
-        import json, os
-        try:
-            report = json.load(open('scripts/combined_report.json'))
-            severities = [c.get('severity','NONE') for c in report['checks'].values()]
-            top = 'CRITICAL' if 'CRITICAL' in severities else 'HIGH' if 'HIGH' in severities else 'MEDIUM' if 'MEDIUM' in severities else 'NONE'
-            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                f.write(f'vulnerabilities-found={str(report[\"push_blocked\"]).lower()}\n')
-                f.write(f'total-loss-usd={report[\"total_loss_usd\"]}\n')
-                f.write(f'severity={top}\n')
-        except Exception as e:
-            print(f'Could not read report: {e}')
-        "
+        set -euo pipefail
+        rm -f /tmp/all_reports.jsonl
+        touch /tmp/all_reports.jsonl
+
+        while IFS= read -r CONTRACT_DIR; do
+          echo "=== Scanning $CONTRACT_DIR ==="
+          pushd "$CONTRACT_DIR" > /dev/null
+
+          stellar contract build
+
+          stellar keys generate victim   --network "${{ inputs.network }}" --fund --overwrite
+          stellar keys generate attacker --network "${{ inputs.network }}" --fund --overwrite
+          VICTIM_ADDRESS=$(stellar keys address victim)
+          ATTACKER_ADDRESS=$(stellar keys address attacker)
+
+          WASM_PATH=$(find target/wasm32v1-none/release -maxdepth 1 -name '*.wasm' | head -n1)
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm "$WASM_PATH" \
+            --source victim \
+            --network "${{ inputs.network }}")
+
+          VICTIM_ADDRESS="$VICTIM_ADDRESS" \
+          ATTACKER_ADDRESS="$ATTACKER_ADDRESS" \
+          CONTRACT_ID="$CONTRACT_ID" \
+          CONTRACT_DIR="$CONTRACT_DIR" \
+          STELLAR_NETWORK="${{ inputs.network }}" \
+          FAIL_ON_SEVERITY="${{ inputs.fail_on_severity }}" \
+            python3 "$GITHUB_ACTION_PATH/scripts/run_all.py" || true
+
+          if [ "${{ inputs.enable_ai_agent }}" == "true" ]; then
+            VICTIM_ADDRESS="$VICTIM_ADDRESS" \
+            ATTACKER_ADDRESS="$ATTACKER_ADDRESS" \
+            CONTRACT_ID="$CONTRACT_ID" \
+            CONTRACT_DIR="$CONTRACT_DIR" \
+            STELLAR_NETWORK="${{ inputs.network }}" \
+            OLLAMA_MODEL="${{ inputs.ollama_model }}" \
+              timeout 600 python3 "$GITHUB_ACTION_PATH/scripts/ai_agent_attacker.py" || true
+          fi
+
+          if [ -f scripts/combined_report.json ]; then
+            jq -c --arg dir "$CONTRACT_DIR" '. + {contract_dir: $dir}' scripts/combined_report.json >> /tmp/all_reports.jsonl
+          else
+            echo "{\"contract_dir\": \"$CONTRACT_DIR\", \"push_blocked\": true, \"error\": \"no report produced\"}" >> /tmp/all_reports.jsonl
+          fi
+
+          popd > /dev/null
+        done < /tmp/contract_dirs.txt
+
+    - name: Aggregate reports and determine gate
+      id: gate
+      shell: bash
+      run: |
+        python3 "$GITHUB_ACTION_PATH/scripts/aggregate_reports.py" \
+          --input /tmp/all_reports.jsonl \
+          --fail-on "${{ inputs.fail_on_severity }}" \
+          --output /tmp/combined_report.json
+        SAFE=$(python3 -c "import json; print(str(not json.load(open('/tmp/combined_report.json'))['push_blocked']).lower())")
+        echo "safe=$SAFE" >> "$GITHUB_OUTPUT"
+        echo "report_path=/tmp/combined_report.json" >> "$GITHUB_OUTPUT"
+        echo "Aggregate gate: $( [ "$SAFE" == "true" ] && echo 'SAFE' || echo 'BLOCKED' )"
+
+    - name: Upload combined report
+      uses: actions/upload-artifact@v4
+      with:
+        name: secure-soroban-report
+        path: /tmp/combined_report.json

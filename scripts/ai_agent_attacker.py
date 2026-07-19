@@ -93,29 +93,35 @@ Respond ONLY with JSON:
     "fix": "one line fix"
 }}"""
 
-    try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.1, "num_predict": 500}
-            },
-            timeout=120
-        )
-        if response.status_code == 200:
-            raw = response.json()["response"].strip()
-            print(f"[+] AI response received")
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            if start >= 0 and end > start:
-                return json.loads(raw[start:end])
-        print(f"[-] AI request failed: {response.status_code}")
-        return None
-    except Exception as e:
-        print(f"[-] AI agent error: {e}")
-        return None
+    for attempt in range(1, 4):  # up to 3 attempts
+        try:
+            print(f"[*] AI request attempt {attempt}/3...")
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.1, "num_predict": 500}
+                },
+                timeout=300  # 5 min — model may still be loading on first call
+            )
+            if response.status_code == 200:
+                raw = response.json()["response"].strip()
+                print(f"[+] AI response received")
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                if start >= 0 and end > start:
+                    return json.loads(raw[start:end])
+            print(f"[-] AI request failed: HTTP {response.status_code}")
+            return None
+        except requests.exceptions.Timeout:
+            print(f"[-] Attempt {attempt} timed out — {'retrying' if attempt < 3 else 'giving up'}")
+            time.sleep(10)
+        except Exception as e:
+            print(f"[-] AI agent error: {e}")
+            return None
+    return None
 
 # ── Get balance ─────────────────────────────────────────────
 def get_balance():
