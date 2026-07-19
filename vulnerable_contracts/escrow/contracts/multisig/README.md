@@ -1,0 +1,44 @@
+# Multisig
+
+## Overview
+
+This folder contains a Soroban smart contract example for a multisig. A multisig is a digital signature scheme that allows multiple individuals or entities to jointly authorize transactions. It adds an extra layer of security and control to digital assets, such as cryptocurrencies or digital contracts.
+
+## Contract Functions
+
+| Function Name            | Parameters                                                                                                             | Return Type         | Description                                                                              |
+|--------------------------|------------------------------------------------------------------------------------------------------------------------|---------------------|------------------------------------------------------------------------------------------|
+| `initialize_multisig`    | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>owners: Vec&lt;Address&gt; </code></td></tr><tr><td><code>required_signatures: u32</code></td></tr></tbody></table> | `Result<(), MultisigErr>`              | Initializes the multisig wallet with a set of owners and a required number of signatures for transactions. |
+| `approve_owner_addition` | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>new_owner: Address</code></td></tr><tr><td><code>caller: Address</code></td></tr></tbody></table>                | `Result<(), MultisigErr>`              | Allows an existing owner to approve the addition of a new owner to the multisig wallet.   |
+| `approve_owner_removal`  | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>owner: Address</code></td></tr><tr><td><code>caller: Address</code></td></tr></tbody></table>                | `Result<(), MultisigErr>`              | Allows an existing owner to approve the removal of another owner from the multisig wallet.|
+| `add_owner`              | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>new_owner: Address</code></td></tr></tbody></table>                                                          | `Result<MultisigState, MultisigErr>`              | Adds a new owner to the multisig wallet.                                                  |
+| `remove_owner`           | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>                                                             | `Result<MultisigState, MultisigErr>`              | Removes an existing owner from the multisig wallet.                                       |
+| `submit_tx`              | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>token: Address</code></td></tr><tr><td><code>to: Address</code></td></tr><tr><td><code>amount: i128</code></td></tr><tr><td><code>caller: Address</code></td></tr></tbody></table> | `Result<(), MultisigErr>` | Submits a transaction to be approved by the multisig owners.                             |
+| `confirm_transaction`    | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>tx_id: u32</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>            | `Result<(), MultisigErr>`              | Allows an owner to confirm a transaction.                                                 |
+| `execute_transaction`      | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>tx_id: u32</code></td></tr></tbody></table>                                                       | `Result<(), MultisigErr>`              | Executes a transaction once it has received the required number of confirmations.        |
+| `propose_required_signatures`      | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>required_signatures: u32</code></td></tr><tr><td><code>caller: Address</code></td></tr></tbody></table>                                                       | `Result<(), MultisigErr>`              | Creates a proposal for changing the required signatures for approving a tx. Take into account only one proposal of this kind can be open at the time and will not let others be created either until it expires or is approved.     |
+| `confirm_req_sigs_mod`      | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>                                                       | `Result<(), MultisigErr>`              | Allows a user to confirm the currently open proposal to change the required signatures. If during this confirmation the proposal reaches the needed signatures to be approved it automatically changes the state of the multisig. |
+| `is_owner`                 | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>                                                             | `Result<bool, MultisigErr>`              | Checks if an address is an owner of the multisig wallet.                                  |
+| `get_multisig_state`       | <table><tbody><tr><td><code>env: Env</code></td></tr></tbody></table>                                                                              | `Result<MultisigState, MultisigErr>`     | Retrieves the current state of the multisig wallet.                                       |
+| `get_proposed_tx`          | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>proposal_id: u32</code></td></tr></tbody></table>                                                                              | `Result<ProposedTx, MultisigErr>`     | Retrieves the state of a specific proposal. |
+| `get_confirmation`         | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>proposal_id: u32</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>                                                                              | `Confirmation`     | Given an owner and a proposal id, retrieves the state of a user's confirmation regarding a specific proposed tx.                                      |
+| `get_member_modification`  | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>address: Address</code></td></tr></tbody></table>                                                                              | `MemberModification`     | Retrieves the state of a member addition/removal proposal.                                       |
+| `get_member_confirmation`  | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>modification_id: u32</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>                                                                              | `Result<MultisigState, MultisigErr>`     | Retrieves the confirmation of a member over a specific user addition/removal proposal.                                       |
+| `get_req_sigs_modification`| <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>id: u32</code></td></tr></tbody></table>                                                                              | `Result<ChangeReqSigs, MultisigErr>`     | Retrieves the state of a proposal for changing required signatures. Returns error if the proposal never existed. |
+| `get_req_sigs_mod_conf`    | <table><tbody><tr><td><code>env: Env</code></td></tr><tr><td><code>owner: Address</code></td></tr></tbody></table>                                                                              | `ReqSigsConf`     | Retrieves the confirmation of a member over a specific proposal to change required signatures value.                                       |
+
+
+## Interacting with the Contract
+
+1. **Submit Transaction**. Submit a transaction using the function `submit_tx()`.
+   
+2. **Confirm Transaction**. Approve the transaction through the function `confirm_transaction()`. Each user can provide only one confirmation per transaction.
+
+3. **Execute Transaction** . After the transaction has been generated and approved, use the `execute_transaction()` function to carry out the transaction.
+   
+**Remove Owner or Add Owner**. Whenever there is the need to add or remove an owner, current members should vote on it by calling `approve_owner_adittion` or `approve_owner_removal`. Every time a member invokes one of these functions, a verification will be done to check whether the removal or the addition has reached the minimum amount of signatures required to be executed. If the required confirmations have been, indeed, reached these functions will take care of calling the internal methods `add_owner` or `remove_owner` respectively. 
+
+## Security Review
+
+:point_right: Navigate to [this link](https://github.com/CoinFabrik/scout-soroban-examples/blob/main/security-review/README.md) to view the security review.
+

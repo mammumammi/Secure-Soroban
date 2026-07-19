@@ -5,5 +5,6 @@
   "from_secret": "SC3LW6NM3ULAOQR4T4N4ISGVV4YACPCYTQNAHUT7PCLTHUX55INFRWDQ",
   "to_address": "GAPJOEEWW4Y5ASHLRB2XAF6LDVHN5GJQFW4VZDPRDR5JODR3ZNYBFJQD",
   "network": "testnet",
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-07-19T13:28:06.599654"
 }
