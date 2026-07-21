@@ -162,7 +162,7 @@ def get_balance():
     except:
         return 0
 
-# ── Fund victim wallet before each attack ──────────────────
+# ── Fund victim wallet before each attack .──────────────────
 def fund_victim_wallet(amount=None):
     """Ensure the victim wallet has XLM (for fees) and tokens before each attack."""
     if amount is None:
